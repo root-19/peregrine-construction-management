@@ -1,4 +1,6 @@
-import { getUserByEmail } from '@/peregrineDB/database';
+import { useUser } from '@/contexts/UserContext';
+import { getHRAccountByEmail, getUserByEmail } from '@/peregrineDB/database';
+import { User } from '@/peregrineDB/types';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
@@ -6,6 +8,7 @@ import { ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { setUser } = useUser();
   const [companyEmail, setCompanyEmail] = useState('');
   const [companyPosition, setCompanyPosition] = useState('');
   const [password, setPassword] = useState('');
@@ -17,11 +20,41 @@ export default function LoginScreen() {
         return;
       }
 
+      // First check HR accounts
+      const hrAccount = await getHRAccountByEmail(companyEmail);
+      if (hrAccount && hrAccount.password === password) {
+        // Convert HR account to user format for context
+        const user: User = {
+          id: hrAccount.id,
+          name: hrAccount.name,
+          last_name: hrAccount.last_name,
+          email: hrAccount.email,
+          password: hrAccount.password,
+          company_position: hrAccount.position || 'HR',
+          created_at: hrAccount.created_at,
+        };
+        setUser(user);
+        router.replace('/hr-dashboard');
+        return;
+      }
+
+      // Check regular users
       const user = await getUserByEmail(companyEmail);
       
       if (user && user.password === password) {
-        // Login successful - navigate to main app
-        router.replace('/(tabs)');
+        // Set user in context
+        setUser(user);
+        
+        // Check if user is HR
+        const isHR = user.company_position?.toLowerCase().includes('hr') || false;
+        
+        if (isHR) {
+          // Navigate to HR dashboard
+          router.replace('/hr-dashboard');
+        } else {
+          // Navigate to regular user dashboard
+          router.replace('/(tabs)');
+        }
       } else {
         alert('Invalid email or password');
       }
@@ -38,7 +71,7 @@ export default function LoginScreen() {
 
   return (
     <ImageBackground
-      source={require('@/assets/images/icon.png')}
+      source={require('@/assets/images/Background.png')}
       style={styles.container}
       resizeMode="cover"
     >
@@ -96,6 +129,14 @@ export default function LoginScreen() {
             >
               <Text style={styles.loginButtonText}>Login</Text>
             </TouchableOpacity>
+
+            <View style={styles.hrInfoBox}>
+              <Text style={styles.hrInfoTitle}>Default HR Account:</Text>
+              <Text style={styles.hrInfoText}>Email: hr@peregrine.com</Text>
+              <Text style={styles.hrInfoText}>Password: hr123</Text>
+              <Text style={styles.hrInfoText}>Company: Peregrine Construction & Management L.L.C INC</Text>
+              <Text style={styles.hrInfoText}>Position: HR Manager</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -111,7 +152,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(34, 139, 34, 0.9)',
+    // backgroundColor: 'rgba(34, 139, 34, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -140,7 +181,7 @@ const styles = StyleSheet.create({
   },
   titleUnderline: {
     height: 2,
-    backgroundColor: '#228B22',
+    // backgroundColor: '#228B22',
     marginBottom: 16,
   },
   subtitle: {
@@ -180,6 +221,25 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  hrInfoBox: {
+    backgroundColor: '#f0f8f0',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#228B22',
+  },
+  hrInfoTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#228B22',
+    marginBottom: 4,
+  },
+  hrInfoText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });
 

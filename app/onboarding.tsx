@@ -11,7 +11,7 @@ export default function OnboardingScreen() {
 
   return (
     <ImageBackground
-      source={require('@/assets/images/icon.png')}
+      source={require('@/assets/images/Background.png')}
       style={styles.container}
       resizeMode="cover"
     >
@@ -20,7 +20,7 @@ export default function OnboardingScreen() {
           <View style={styles.logoContainer}>
             <View style={styles.logoCircle}>
               <Image
-                source={require('@/assets/images/icon.png')}
+                source={require('@/assets/images/Logo.png')}
                 style={styles.logo}
                 contentFit="contain"
               />
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(34, 139, 34, 0.85)', // Dark green overlay
+    // backgroundColor: 'rgba(34, 139, 34, 0.85)', // Dark green overlay
     justifyContent: 'center',
     alignItems: 'center',
   },

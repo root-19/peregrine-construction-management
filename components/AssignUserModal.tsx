@@ -1,0 +1,283 @@
+import { StyleSheet, Text, TouchableOpacity, View, Modal, FlatList, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { User } from '@/peregrineDB/types';
+import { getAllUsers, assignUserToFolder, unassignUserFromFolder, getAssignedUsersForFolder } from '@/peregrineDB/database';
+import { useEffect, useState } from 'react';
+
+interface AssignUserModalProps {
+  visible: boolean;
+  folderId: number;
+  folderName: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export default function AssignUserModal({ visible, folderId, folderName, onClose, onSuccess }: AssignUserModalProps) {
+  const [users, setUsers] = useState<User[]>([]);
+  const [assignedUsers, setAssignedUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (visible && folderId) {
+      loadUsers();
+      loadAssignedUsers();
+    }
+  }, [visible, folderId]);
+
+  const loadUsers = async () => {
+    try {
+      const allUsers = await getAllUsers();
+      setUsers(allUsers);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      Alert.alert('Error', 'Failed to load users');
+    }
+  };
+
+  const loadAssignedUsers = async () => {
+    try {
+      const assigned = await getAssignedUsersForFolder(folderId);
+      setAssignedUsers(assigned);
+    } catch (error) {
+      console.error('Error loading assigned users:', error);
+    }
+  };
+
+  const handleToggleAssignment = async (user: User) => {
+    const isAssigned = assignedUsers.some(au => au.id === user.id);
+    
+    try {
+      setLoading(true);
+      if (isAssigned) {
+        await unassignUserFromFolder(folderId, user.id);
+        Alert.alert('Success', `${user.name} ${user.last_name} has been unassigned from this folder`);
+      } else {
+        await assignUserToFolder(folderId, user.id);
+        Alert.alert('Success', `${user.name} ${user.last_name} has been assigned to this folder`);
+      }
+      await loadAssignedUsers();
+      onSuccess();
+    } catch (error) {
+      console.error('Error toggling assignment:', error);
+      Alert.alert('Error', 'Failed to update assignment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isUserAssigned = (userId: number) => {
+    return assignedUsers.some(au => au.id === userId);
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.header}>
+              <View style={styles.headerText}>
+                <Text style={styles.title}>Assign Users</Text>
+                <Text style={styles.subtitle}>Folder: {folderName}</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {users.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="people-outline" size={64} color="#999" />
+                <Text style={styles.emptyText}>No users available</Text>
+                <Text style={styles.emptySubtext}>Create user accounts first</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={users}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={({ item }) => {
+                  const assigned = isUserAssigned(item.id);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.userCard, assigned && styles.userCardAssigned]}
+                      onPress={() => handleToggleAssignment(item)}
+                      disabled={loading}
+                    >
+                      <View style={styles.userInfo}>
+                        <Ionicons 
+                          name={assigned ? "checkmark-circle" : "person-outline"} 
+                          size={24} 
+                          color={assigned ? "#228B22" : "#999"} 
+                          style={styles.userIcon}
+                        />
+                        <View style={styles.userDetails}>
+                          <Text style={styles.userName}>
+                            {item.name} {item.last_name}
+                          </Text>
+                          <Text style={styles.userEmail}>{item.email}</Text>
+                          {item.company_position && (
+                            <Text style={styles.userPosition}>{item.company_position}</Text>
+                          )}
+                        </View>
+                      </View>
+                      {assigned && (
+                        <View style={styles.assignedBadge}>
+                          <Text style={styles.assignedText}>Assigned</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                contentContainerStyle={styles.listContent}
+              />
+            )}
+
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.doneButton} onPress={onClose}>
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    width: '100%',
+    maxHeight: '90%',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    maxHeight: '90%',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  headerText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#228B22',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  listContent: {
+    paddingBottom: 10,
+  },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  userCardAssigned: {
+    backgroundColor: '#f0f8f0',
+    borderColor: '#228B22',
+    borderWidth: 2,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userIcon: {
+    marginRight: 12,
+  },
+  userDetails: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  userPosition: {
+    fontSize: 12,
+    color: '#999',
+  },
+  assignedBadge: {
+    backgroundColor: '#228B22',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  assignedText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    minHeight: 200,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#999',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  footer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  doneButton: {
+    backgroundColor: '#228B22',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  doneButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+

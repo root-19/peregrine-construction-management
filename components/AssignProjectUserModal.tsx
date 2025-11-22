@@ -1,8 +1,8 @@
-import { StyleSheet, Text, TouchableOpacity, View, Modal, FlatList, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { assignUserToProject, getAllPositions, getAssignedUsersForProject, getUsersByPosition, unassignUserFromProject } from '@/peregrineDB/database';
 import { User } from '@/peregrineDB/types';
-import { getAllUsers, assignUserToProject, unassignUserFromProject, getAssignedUsersForProject } from '@/peregrineDB/database';
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
+import { Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssignProjectUserModalProps {
   visible: boolean;
@@ -13,25 +13,52 @@ interface AssignProjectUserModalProps {
 }
 
 export default function AssignProjectUserModal({ visible, projectId, projectName, onClose, onSuccess }: AssignProjectUserModalProps) {
+  const [positions, setPositions] = useState<string[]>([]);
+  const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [assignedUsers, setAssignedUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showPositions, setShowPositions] = useState(true);
 
   useEffect(() => {
     if (visible && projectId) {
-      loadUsers();
+      loadPositions();
       loadAssignedUsers();
+      // Reset to positions view when modal opens
+      setShowPositions(true);
+      setSelectedPosition(null);
     }
   }, [visible, projectId]);
 
-  const loadUsers = async () => {
+  const loadPositions = async () => {
     try {
-      const allUsers = await getAllUsers();
-      setUsers(allUsers);
+      const allPositions = await getAllPositions();
+      setPositions(allPositions);
     } catch (error) {
-      console.error('Error loading users:', error);
-      Alert.alert('Error', 'Failed to load users');
+      console.error('Error loading positions:', error);
+      Alert.alert('Error', 'Failed to load positions');
     }
+  };
+
+  const loadUsersForPosition = async (position: string) => {
+    try {
+      setLoading(true);
+      const usersForPosition = await getUsersByPosition(position);
+      setUsers(usersForPosition);
+      setSelectedPosition(position);
+      setShowPositions(false);
+    } catch (error) {
+      console.error('Error loading users for position:', error);
+      Alert.alert('Error', 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackToPositions = () => {
+    setShowPositions(true);
+    setSelectedPosition(null);
+    setUsers([]);
   };
 
   const loadAssignedUsers = async () => {
@@ -81,59 +108,101 @@ export default function AssignProjectUserModal({ visible, projectId, projectName
           <View style={styles.modalContent}>
             <View style={styles.header}>
               <View style={styles.headerText}>
-                <Text style={styles.title}>Assign Users to Project</Text>
-                <Text style={styles.subtitle}>Project: {projectName}</Text>
+                {!showPositions && (
+                  <TouchableOpacity onPress={handleBackToPositions} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color="#228B22" />
+                  </TouchableOpacity>
+                )}
+                <Text style={styles.title}>
+                  {showPositions ? 'Select Position' : `Users - ${selectedPosition}`}
+                </Text>
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            {users.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={64} color="#999" />
-                <Text style={styles.emptyText}>No users available</Text>
-                <Text style={styles.emptySubtext}>Create user accounts first</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={users}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={({ item }) => {
-                  const assigned = isUserAssigned(item.id);
-                  return (
+            {showPositions ? (
+              positions.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="briefcase-outline" size={64} color="#999" />
+                  <Text style={styles.emptyText}>No positions available</Text>
+                  <Text style={styles.emptySubtext}>Create user accounts with positions first</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={positions}
+                  keyExtractor={(item) => item}
+                  renderItem={({ item }) => (
                     <TouchableOpacity
-                      style={[styles.userCard, assigned && styles.userCardAssigned]}
-                      onPress={() => handleToggleAssignment(item)}
+                      style={styles.positionCard}
+                      onPress={() => loadUsersForPosition(item)}
                       disabled={loading}
                     >
-                      <View style={styles.userInfo}>
+                      <View style={styles.positionInfo}>
                         <Ionicons 
-                          name={assigned ? "checkmark-circle" : "person-outline"} 
+                          name="briefcase" 
                           size={24} 
-                          color={assigned ? "#228B22" : "#999"} 
-                          style={styles.userIcon}
+                          color="#228B22" 
+                          style={styles.positionIcon}
                         />
-                        <View style={styles.userDetails}>
-                          <Text style={styles.userName}>
-                            {item.name} {item.last_name}
-                          </Text>
-                          <Text style={styles.userEmail}>{item.email}</Text>
-                          {item.company_position && (
-                            <Text style={styles.userPosition}>{item.company_position}</Text>
-                          )}
-                        </View>
+                        <Text style={styles.positionName}>{item}</Text>
                       </View>
-                      {assigned && (
-                        <View style={styles.assignedBadge}>
-                          <Text style={styles.assignedText}>Assigned</Text>
-                        </View>
-                      )}
+                      <Ionicons name="chevron-forward" size={20} color="#999" />
                     </TouchableOpacity>
-                  );
-                }}
-                contentContainerStyle={styles.listContent}
-              />
+                  )}
+                  contentContainerStyle={styles.listContent}
+                />
+              )
+            ) : (
+              users.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={64} color="#999" />
+                  <Text style={styles.emptyText}>No users available</Text>
+                  <Text style={styles.emptySubtext}>No users found for this position</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={users}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={({ item }) => {
+                    const assigned = isUserAssigned(item.id);
+                    return (
+                      <TouchableOpacity
+                        style={[styles.userCard, assigned && styles.userCardAssigned]}
+                        onPress={() => handleToggleAssignment(item)}
+                        disabled={loading}
+                      >
+                        <View style={styles.userInfo}>
+                          <Ionicons 
+                            name={assigned ? "checkmark-circle" : "person-outline"} 
+                            size={24} 
+                            color={assigned ? "#228B22" : "#999"} 
+                            style={styles.userIcon}
+                          />
+                          <View style={styles.userDetails}>
+                            <Text style={styles.userName}>
+                              {item.name} {item.last_name}
+                            </Text>
+                            <Text style={styles.userEmail}>{item.email}</Text>
+                            {(item.position || item.company_position) && (
+                              <Text style={styles.userPosition}>
+                                {item.position || item.company_position}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                        {assigned && (
+                          <View style={styles.assignedBadge}>
+                            <Text style={styles.assignedText}>Assigned</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  }}
+                  contentContainerStyle={styles.listContent}
+                />
+              )
             )}
 
             <View style={styles.footer}>
@@ -156,7 +225,7 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     width: '100%',
-    maxHeight: '90%',
+    maxHeight: '100%',
   },
   modalContent: {
     backgroundColor: 'white',
@@ -173,6 +242,12 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    marginRight: 12,
+    padding: 4,
   },
   title: {
     fontSize: 22,
@@ -261,6 +336,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  positionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  positionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  positionIcon: {
+    marginRight: 12,
+  },
+  positionName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
   footer: {
     marginTop: 20,

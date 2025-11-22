@@ -2,7 +2,7 @@ import AddItemModal from '@/components/AddItemModal';
 import AssignProjectUserModal from '@/components/AssignProjectUserModal';
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getAllProjects, insertProject } from '@/peregrineDB/database';
+import { deleteProject, getAllProjects, insertProject, updateProject } from '@/peregrineDB/database';
 import { Project } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -12,18 +12,29 @@ import { Alert, FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, V
 
 export default function ProjectsScreen() {
   const router = useRouter();
-  const { user } = useUser();
+  const { user, isHR } = useUser();
   const { isInitialized } = useDatabase();
   const [projects, setProjects] = useState<Project[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  
+  // Check if user is Manager or COO
+  const isManagerOrCOO = user?.company_position?.toLowerCase().includes('manager') || 
+                         user?.company_position?.toLowerCase().includes('coo') ||
+                         user?.position?.toLowerCase().includes('manager') ||
+                         user?.position?.toLowerCase().includes('coo');
 
   useEffect(() => {
     // Wait for database to be initialized before loading projects
     if (isInitialized) {
-      loadProjects();
+      // Add a delay to ensure database is fully ready
+      const timer = setTimeout(() => {
+        loadProjects();
+      }, 400);
+      return () => clearTimeout(timer);
     }
   }, [isInitialized]);
 
@@ -38,6 +49,7 @@ export default function ProjectsScreen() {
   };
 
   const handleAddProject = () => {
+    setProjectName('');
     setShowAddModal(true);
   };
 
@@ -53,11 +65,13 @@ export default function ProjectsScreen() {
         setProjectName('');
         setShowAddModal(false);
         await loadProjects();
-        // Open assignment modal for the newly created project
-        setTimeout(() => {
-          setSelectedProject(newProject);
-          setShowAssignModal(true);
-        }, 100);
+        // Open assignment modal for the newly created project (only for HR)
+        if (isHR) {
+          setTimeout(() => {
+            setSelectedProject(newProject);
+            setShowAssignModal(true);
+          }, 100);
+        }
       } catch (error) {
         console.error('Error adding project:', error);
         Alert.alert('Error', 'Failed to add project. Please make sure the database is initialized.');
@@ -67,15 +81,71 @@ export default function ProjectsScreen() {
     }
   };
 
+  const handleRenameProject = (project: Project) => {
+    setSelectedProject(project);
+    setProjectName(project.name);
+    setShowRenameModal(true);
+  };
+
+  const handleSaveRename = async () => {
+    if (projectName.trim() && selectedProject) {
+      try {
+        await updateProject(selectedProject.id, projectName.trim());
+        setProjectName('');
+        setShowRenameModal(false);
+        setSelectedProject(null);
+        await loadProjects();
+        Alert.alert('Success', 'Project renamed successfully');
+      } catch (error) {
+        console.error('Error renaming project:', error);
+        Alert.alert('Error', 'Failed to rename project');
+      }
+    }
+  };
+
+  const handleDeleteProject = (project: Project) => {
+    Alert.alert(
+      'Delete Project',
+      `Are you sure you want to delete "${project.name}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProject(project.id);
+              await loadProjects();
+              Alert.alert('Success', 'Project deleted successfully');
+            } catch (error) {
+              console.error('Error deleting project:', error);
+              Alert.alert('Error', 'Failed to delete project');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCloseModal = () => {
     setProjectName('');
     setShowAddModal(false);
+    setShowRenameModal(false);
+    setSelectedProject(null);
   };
 
   const handleProjectPress = (project: Project) => {
-    // Open assignment modal to show assigned users
-    setSelectedProject(project);
-    setShowAssignModal(true);
+    // For HR: Open assignment modal to show assigned users
+    // For Manager/COO: Navigate to project detail
+    if (isHR) {
+      setSelectedProject(project);
+      setShowAssignModal(true);
+    } else {
+      handleNavigateToProject(project);
+    }
   };
 
   const handleNavigateToProject = (project: Project) => {
@@ -96,9 +166,12 @@ export default function ProjectsScreen() {
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           <Text style={styles.title}>Projects</Text>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddProject}>
-            <Ionicons name="add" size={24} color="white" />
-          </TouchableOpacity>
+          {(isHR || isManagerOrCOO) && (
+            <TouchableOpacity style={styles.addButton} onPress={handleAddProject}>
+              <Ionicons name="add" size={24} color="white" />
+            </TouchableOpacity>
+          )}
+          {!isHR && !isManagerOrCOO && <View style={styles.addButton} />}
         </View>
 
         <View style={styles.content}>
@@ -126,12 +199,32 @@ export default function ProjectsScreen() {
                       )}
                     </View>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.navigateButton}
-                    onPress={() => handleNavigateToProject(item)}
-                  >
-                    <Ionicons name="chevron-forward" size={24} color="#228B22" />
-                  </TouchableOpacity>
+                  <View style={styles.projectActions}>
+                    {(isManagerOrCOO || isHR) && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleRenameProject(item)}
+                        >
+                          <Ionicons name="create-outline" size={20} color="#228B22" />
+                        </TouchableOpacity>
+                        {(isManagerOrCOO || isHR) && (
+                          <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => handleDeleteProject(item)}
+                          >
+                            <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    )}
+                    <TouchableOpacity
+                      style={styles.navigateButton}
+                      onPress={() => handleNavigateToProject(item)}
+                    >
+                      <Ionicons name="chevron-forward" size={24} color="#228B22" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
               contentContainerStyle={styles.listContent}
@@ -148,6 +241,17 @@ export default function ProjectsScreen() {
         onChangeText={setProjectName}
         onClose={handleCloseModal}
         onSave={handleSaveProject}
+      />
+
+      <AddItemModal
+        visible={showRenameModal}
+        title="Rename Project"
+        placeholder="Enter new project name"
+        value={projectName}
+        onChangeText={setProjectName}
+        onClose={handleCloseModal}
+        onSave={handleSaveRename}
+        buttonText="Save"
       />
 
       {selectedProject && (
@@ -223,9 +327,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  projectActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    padding: 8,
+  },
   navigateButton: {
     padding: 8,
-    marginLeft: 8,
+    marginLeft: 4,
   },
   folderIcon: {
     marginRight: 16,

@@ -79,3 +79,33 @@ export interface ProjectFolder {
   created_at?: string;
 }
 
+export interface ManagerCOOAccount {
+  id: number;
+  name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  company_name?: string;
+  position?: string;
+  created_at?: string;
+}
+
+export interface CreateManagerCOOAccountInput {
+  name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  company_name?: string;
+  position?: string;
+}
+
+export interface Position {
+  id: number;
+  position: string;
+  created_at?: string;
+}
+
+export interface CreatePositionInput {
+  position: string;
+}
+

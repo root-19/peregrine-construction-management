@@ -9,6 +9,7 @@ interface AddItemModalProps {
   onChangeText: (text: string) => void;
   onClose: () => void;
   onSave: () => void;
+  buttonText?: string; // Optional button text, defaults to "Add"
 }
 
 export default function AddItemModal({
@@ -19,6 +20,7 @@ export default function AddItemModal({
   onChangeText,
   onClose,
   onSave,
+  buttonText = 'Add',
 }: AddItemModalProps) {
   return (
     <Modal
@@ -59,7 +61,7 @@ export default function AddItemModal({
                 onPress={onSave}
                 disabled={!value.trim()}
               >
-                <Text style={styles.saveButtonText}>Add</Text>
+                <Text style={styles.saveButtonText}>{buttonText}</Text>
               </TouchableOpacity>
             </View>
           </View>

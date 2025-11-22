@@ -1,29 +1,50 @@
 import { useUser } from '@/contexts/UserContext';
-import { getHRAccountByEmail, getUserByEmail } from '@/peregrineDB/database';
+import { useDatabase } from '@/hooks/use-database';
+import { getHRAccountByEmail, getManagerCOOAccountByEmail, getUserByEmail } from '@/peregrineDB/database';
 import { User } from '@/peregrineDB/types';
+import { sendOTPEmail } from '@/utils/email';
+import { generateOTP, storeOTP } from '@/utils/otp';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function LoginScreen() {
   const router = useRouter();
   const { setUser } = useUser();
+  const { isInitialized } = useDatabase();
   const [companyEmail, setCompanyEmail] = useState('');
   const [companyPosition, setCompanyPosition] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     try {
       if (!companyEmail || !password) {
-        alert('Please fill in all required fields');
+        Alert.alert('Error', 'Please fill in all required fields');
         return;
       }
+
+      if (!isInitialized) {
+        Alert.alert('Please wait', 'Database is initializing. Please try again in a moment.');
+        return;
+      }
+
+      setLoading(true);
 
       // First check HR accounts
       const hrAccount = await getHRAccountByEmail(companyEmail);
       if (hrAccount && hrAccount.password === password) {
-        // Convert HR account to user format for context
+        // Generate and store OTP
+        const otp = generateOTP();
+        storeOTP(companyEmail, otp);
+        
+        // Log OTP in dev mode for immediate access
+        if (__DEV__) {
+          console.log('🔐 OTP for', companyEmail, ':', otp);
+        }
+        
+        // Convert HR account to user format for context (temporary, will be set after OTP verification)
         const user: User = {
           id: hrAccount.id,
           name: hrAccount.name,
@@ -33,8 +54,78 @@ export default function LoginScreen() {
           company_position: hrAccount.position || 'HR',
           created_at: hrAccount.created_at,
         };
-        setUser(user);
-        router.replace('/hr-dashboard');
+        
+        // Navigate to OTP screen immediately (don't wait for email)
+        router.push({
+          pathname: '/otp',
+          params: {
+            email: companyEmail,
+            userType: 'hr',
+            userId: user.id.toString(),
+            userName: user.name,
+            userLastName: user.last_name,
+            userPosition: user.company_position || 'HR',
+          },
+        });
+        setLoading(false);
+        
+        // Send email in background (non-blocking)
+        sendOTPEmail(companyEmail, otp).catch((error) => {
+          console.warn('Email sending failed (non-blocking):', error);
+        });
+        
+        return;
+      }
+
+      // Check Manager/COO accounts (separate table)
+      const managerCOOAccount = await getManagerCOOAccountByEmail(companyEmail);
+      if (managerCOOAccount && managerCOOAccount.password === password) {
+        // Generate and store OTP
+        const otp = generateOTP();
+        storeOTP(companyEmail, otp);
+        
+        // Log OTP in dev mode for immediate access
+        if (__DEV__) {
+          console.log('🔐 OTP for', companyEmail, ':', otp);
+        }
+        
+        // Determine user type based on position
+        const position = managerCOOAccount.position?.toLowerCase() || '';
+        let userType = 'manager';
+        if (position.includes('coo')) {
+          userType = 'coo';
+        }
+        
+        // Convert Manager/COO account to user format for context
+        const user: User = {
+          id: managerCOOAccount.id,
+          name: managerCOOAccount.name,
+          last_name: managerCOOAccount.last_name,
+          email: managerCOOAccount.email,
+          password: managerCOOAccount.password,
+          company_position: managerCOOAccount.position || 'Manager',
+          created_at: managerCOOAccount.created_at,
+        };
+        
+        // Navigate to OTP screen immediately (don't wait for email)
+        router.push({
+          pathname: '/otp',
+          params: {
+            email: companyEmail,
+            userType: userType,
+            userId: user.id.toString(),
+            userName: user.name,
+            userLastName: user.last_name,
+            userPosition: user.company_position || 'Manager',
+          },
+        });
+        setLoading(false);
+        
+        // Send email in background (non-blocking)
+        sendOTPEmail(companyEmail, otp).catch((error) => {
+          console.warn('Email sending failed (non-blocking):', error);
+        });
+        
         return;
       }
 
@@ -42,25 +133,44 @@ export default function LoginScreen() {
       const user = await getUserByEmail(companyEmail);
       
       if (user && user.password === password) {
-        // Set user in context
-        setUser(user);
+        // Generate and store OTP
+        const otp = generateOTP();
+        storeOTP(companyEmail, otp);
+        
+        // Log OTP in dev mode for immediate access
+        if (__DEV__) {
+          console.log('🔐 OTP for', companyEmail, ':', otp);
+        }
         
         // Check if user is HR
         const isHR = user.company_position?.toLowerCase().includes('hr') || false;
         
-        if (isHR) {
-          // Navigate to HR dashboard
-          router.replace('/hr-dashboard');
-        } else {
-          // Navigate to regular user dashboard
-          router.replace('/(tabs)');
-        }
+        // Navigate to OTP screen immediately (don't wait for email)
+        router.push({
+          pathname: '/otp',
+          params: {
+            email: companyEmail,
+            userType: isHR ? 'hr' : 'user',
+            userId: user.id.toString(),
+            userName: user.name,
+            userLastName: user.last_name,
+            userPosition: user.company_position || '',
+          },
+        });
+        setLoading(false);
+        
+        // Send email in background (non-blocking)
+        sendOTPEmail(companyEmail, otp).catch((error) => {
+          console.warn('Email sending failed (non-blocking):', error);
+        });
       } else {
-        alert('Invalid email or password');
+        Alert.alert('Error', 'Invalid email or password');
+        setLoading(false);
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('An error occurred during login');
+      Alert.alert('Error', 'An error occurred during login');
+      setLoading(false);
     }
   };
 
@@ -124,18 +234,20 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.loginButton}
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
               onPress={handleLogin}
+              disabled={loading}
             >
-              <Text style={styles.loginButtonText}>Login</Text>
+              <Text style={styles.loginButtonText}>
+                {loading ? 'Sending OTP...' : 'Login'}
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.hrInfoBox}>
-              <Text style={styles.hrInfoTitle}>Default HR Account:</Text>
-              <Text style={styles.hrInfoText}>Email: hr@peregrine.com</Text>
-              <Text style={styles.hrInfoText}>Password: hr123</Text>
-              <Text style={styles.hrInfoText}>Company: Peregrine Construction & Management L.L.C INC</Text>
-              <Text style={styles.hrInfoText}>Position: HR Manager</Text>
+              <Text style={styles.hrInfoTitle}>Default Accounts:</Text>
+              <Text style={styles.hrInfoText}>HR: hr@peregrine.com / hr123</Text>
+              <Text style={styles.hrInfoText}>Manager: manager@peregrine.com / manager123</Text>
+              <Text style={styles.hrInfoText}>COO: coo@peregrine.com / coo123</Text>
             </View>
           </View>
         </View>
@@ -221,6 +333,9 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  loginButtonDisabled: {
+    opacity: 0.6,
   },
   hrInfoBox: {
     backgroundColor: '#f0f8f0',

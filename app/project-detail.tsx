@@ -1,7 +1,8 @@
 import AddItemModal from '@/components/AddItemModal';
 import AssignUserModal from '@/components/AssignUserModal';
+import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getProjectFolders, insertProjectFolder } from '@/peregrineDB/database';
+import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, insertProjectFolder, updateProjectFolder } from '@/peregrineDB/database';
 import { ProjectFolder } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,25 +14,57 @@ export default function ProjectDetailScreen() {
   const router = useRouter();
   const { projectId, projectName } = useLocalSearchParams<{ projectId: string; projectName: string }>();
   const { isInitialized } = useDatabase();
+  const { user, isHR } = useUser();
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<number | undefined>(undefined);
   const [folderPath, setFolderPath] = useState<ProjectFolder[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<ProjectFolder | null>(null);
+  
+  // Check if user is Manager or COO
+  const isManagerOrCOO = user?.company_position?.toLowerCase().includes('manager') || 
+                         user?.company_position?.toLowerCase().includes('coo') ||
+                         user?.position?.toLowerCase().includes('manager') ||
+                         user?.position?.toLowerCase().includes('coo');
+  
+  // Manager/COO can do same as HR for folders
+  const canManageFolders = isHR || isManagerOrCOO;
 
   useEffect(() => {
     // Wait for database to be initialized before loading folders
     if (projectId && isInitialized) {
-      loadFolders();
+      // Add a delay to ensure database is fully ready
+      const timer = setTimeout(() => {
+        loadFolders();
+      }, 300);
+      return () => clearTimeout(timer);
     }
   }, [projectId, currentFolderId, isInitialized]);
 
   const loadFolders = async () => {
     if (!projectId) return;
     try {
-      const projectFolders = await getProjectFolders(parseInt(projectId), currentFolderId);
+      let projectFolders: ProjectFolder[] = [];
+      
+      // If user is HR or Manager/COO, show all folders. If regular user, show only assigned folders
+      if (canManageFolders) {
+        projectFolders = await getProjectFolders(parseInt(projectId), currentFolderId);
+      } else if (user) {
+        // For regular users, get only folders assigned to them
+        const allUserFolders = await getProjectFoldersForUser(user.id, parseInt(projectId));
+        // Filter by current folder (parent_folder_id)
+        if (currentFolderId === undefined) {
+          // Show root folders (no parent)
+          projectFolders = allUserFolders.filter(f => !f.parent_folder_id);
+        } else {
+          // Show folders with current folder as parent
+          projectFolders = allUserFolders.filter(f => f.parent_folder_id === currentFolderId);
+        }
+      }
+      
       setFolders(projectFolders || []);
     } catch (error) {
       console.error('Error loading folders:', error);
@@ -40,6 +73,7 @@ export default function ProjectDetailScreen() {
   };
 
   const handleAddFolder = () => {
+    setFolderName('');
     setShowAddModal(true);
   };
 
@@ -55,13 +89,15 @@ export default function ProjectDetailScreen() {
         };
         setFolderName('');
         setShowAddModal(false);
-        // Reload folders first, then open assignment modal
+        // Reload folders first, then open assignment modal (only for HR)
         await loadFolders();
-        // Small delay to ensure folder is loaded
-        setTimeout(() => {
-          setSelectedFolder(newFolder);
-          setShowAssignModal(true);
-        }, 100);
+        if (isHR) {
+          // Small delay to ensure folder is loaded
+          setTimeout(() => {
+            setSelectedFolder(newFolder);
+            setShowAssignModal(true);
+          }, 100);
+        }
       } catch (error) {
         console.error('Error adding folder:', error);
         Alert.alert('Error', 'Failed to add folder');
@@ -69,15 +105,72 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const handleRenameFolder = (folder: ProjectFolder) => {
+    setSelectedFolder(folder);
+    setFolderName(folder.name);
+    setShowRenameModal(true);
+  };
+
+  const handleSaveRename = async () => {
+    if (folderName.trim() && selectedFolder) {
+      try {
+        await updateProjectFolder(selectedFolder.id, folderName.trim());
+        setFolderName('');
+        setShowRenameModal(false);
+        setSelectedFolder(null);
+        await loadFolders();
+        Alert.alert('Success', 'Folder renamed successfully');
+      } catch (error) {
+        console.error('Error renaming folder:', error);
+        Alert.alert('Error', 'Failed to rename folder');
+      }
+    }
+  };
+
+  const handleDeleteFolder = (folder: ProjectFolder) => {
+    Alert.alert(
+      'Delete Folder',
+      `Are you sure you want to delete "${folder.name}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProjectFolder(folder.id);
+              await loadFolders();
+              Alert.alert('Success', 'Folder deleted successfully');
+            } catch (error) {
+              console.error('Error deleting folder:', error);
+              Alert.alert('Error', 'Failed to delete folder');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCloseModal = () => {
     setFolderName('');
     setShowAddModal(false);
+    setShowRenameModal(false);
+    setSelectedFolder(null);
   };
 
   const handleFolderPress = (folder: ProjectFolder) => {
-    // Open assignment modal when clicking folder
-    setSelectedFolder(folder);
-    setShowAssignModal(true);
+    // For HR: Open assignment modal when clicking folder
+    // For Manager/COO and regular users: Navigate into folder
+    if (isHR) {
+      setSelectedFolder(folder);
+      setShowAssignModal(true);
+    } else {
+      // Manager/COO and regular users navigate into folder when clicking
+      handleNavigateToFolder(folder);
+    }
   };
 
   const handleNavigateToFolder = (folder: ProjectFolder) => {
@@ -117,9 +210,12 @@ export default function ProjectDetailScreen() {
           <Text style={styles.title} numberOfLines={1}>
             {getCurrentPathName()}
           </Text>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddFolder}>
-            <Ionicons name="add" size={24} color="white" />
-          </TouchableOpacity>
+          {canManageFolders && (
+            <TouchableOpacity style={styles.addButton} onPress={handleAddFolder}>
+              <Ionicons name="add" size={24} color="white" />
+            </TouchableOpacity>
+          )}
+          {!canManageFolders && <View style={styles.addButton} />}
         </View>
 
         {folderPath.length > 0 && (
@@ -154,7 +250,11 @@ export default function ProjectDetailScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="folder-outline" size={64} color="#999" />
               <Text style={styles.emptyText}>No folders yet</Text>
-              <Text style={styles.emptySubtext}>Tap the + button to add a folder</Text>
+              {canManageFolders ? (
+                <Text style={styles.emptySubtext}>Tap the + button to add a folder</Text>
+              ) : (
+                <Text style={styles.emptySubtext}>No folders assigned to you</Text>
+              )}
             </View>
           ) : (
             <FlatList
@@ -169,12 +269,30 @@ export default function ProjectDetailScreen() {
                     <Ionicons name="folder" size={32} color="#228B22" style={styles.folderIcon} />
                     <Text style={styles.folderName}>{item.name}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.navigateButton}
-                    onPress={() => handleNavigateToFolder(item)}
-                  >
-                    <Ionicons name="chevron-forward" size={24} color="#228B22" />
-                  </TouchableOpacity>
+                  <View style={styles.folderActions}>
+                    {canManageFolders && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleRenameFolder(item)}
+                        >
+                          <Ionicons name="create-outline" size={20} color="#228B22" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleDeleteFolder(item)}
+                        >
+                          <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    <TouchableOpacity
+                      style={styles.navigateButton}
+                      onPress={() => handleNavigateToFolder(item)}
+                    >
+                      <Ionicons name="chevron-forward" size={24} color="#228B22" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
               contentContainerStyle={styles.listContent}
@@ -183,17 +301,31 @@ export default function ProjectDetailScreen() {
         </View>
       </View>
 
-      <AddItemModal
-        visible={showAddModal}
-        title="Add New Folder"
-        placeholder="Enter folder name"
-        value={folderName}
-        onChangeText={setFolderName}
-        onClose={handleCloseModal}
-        onSave={handleSaveFolder}
-      />
+      {canManageFolders && (
+        <>
+          <AddItemModal
+            visible={showAddModal}
+            title="Add New Folder"
+            placeholder="Enter folder name"
+            value={folderName}
+            onChangeText={setFolderName}
+            onClose={handleCloseModal}
+            onSave={handleSaveFolder}
+          />
+          <AddItemModal
+            visible={showRenameModal}
+            title="Rename Folder"
+            placeholder="Enter new folder name"
+            value={folderName}
+            onChangeText={setFolderName}
+            onClose={handleCloseModal}
+            onSave={handleSaveRename}
+            buttonText="Save"
+          />
+        </>
+      )}
 
-      {selectedFolder && (
+      {selectedFolder && isHR && (
         <AssignUserModal
           visible={showAssignModal}
           folderId={selectedFolder.id}
@@ -292,11 +424,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  actionButton: {
+    padding: 8,
+  },
   assignButton: {
     padding: 8,
   },
   navigateButton: {
     padding: 8,
+    marginLeft: 4,
   },
   folderIcon: {
     marginRight: 16,

@@ -1,17 +1,12 @@
-import CreatePositionModal from '@/components/CreatePositionModal';
-import CreateUserModal from '@/components/CreateUserModal';
 import { useUser } from '@/contexts/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
 import { ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function HRDashboardScreen() {
+export default function ManagerDashboardScreen() {
   const router = useRouter();
   const { user } = useUser();
-  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
-  const [showCreatePositionModal, setShowCreatePositionModal] = useState(false);
 
   const handleProjectsPress = () => {
     router.push('/projects');
@@ -19,24 +14,6 @@ export default function HRDashboardScreen() {
 
   const handleBack = () => {
     router.back();
-  };
-
-  const handleCreateUser = () => {
-    setShowCreateUserModal(true);
-  };
-
-  const handleCreatePosition = () => {
-    setShowCreatePositionModal(true);
-  };
-
-  const handleUserCreated = () => {
-    // Refresh or show success message
-    console.log('User created successfully');
-  };
-
-  const handlePositionCreated = () => {
-    // Refresh or show success message
-    console.log('Position created successfully');
   };
 
   return (
@@ -51,21 +28,13 @@ export default function HRDashboardScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <View style={styles.topBarIcons}>
-            <TouchableOpacity style={styles.createAccountButton} onPress={handleCreatePosition}>
-              <Ionicons name="briefcase-outline" size={24} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.createAccountButton} onPress={handleCreateUser}>
-              <Ionicons name="person-add" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
         </View>
 
         <View style={styles.content}>
           <Text style={styles.greeting}>
             Greetings,{'\n'}
             <Text style={styles.position}>
-              {user?.company_position || 'HR'}!
+              {user?.company_position || user?.position || 'Manager'}!
             </Text>
           </Text>
 
@@ -83,17 +52,6 @@ export default function HRDashboardScreen() {
           </TouchableOpacity>
         </View>
       </View>
-
-      <CreateUserModal
-        visible={showCreateUserModal}
-        onClose={() => setShowCreateUserModal(false)}
-        onSuccess={handleUserCreated}
-      />
-      <CreatePositionModal
-        visible={showCreatePositionModal}
-        onClose={() => setShowCreatePositionModal(false)}
-        onSuccess={handlePositionCreated}
-      />
     </ImageBackground>
   );
 }
@@ -120,13 +78,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   backButton: {
-    padding: 8,
-  },
-  topBarIcons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  createAccountButton: {
     padding: 8,
   },
   content: {

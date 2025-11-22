@@ -89,9 +89,9 @@ export default function ProjectDetailScreen() {
         };
         setFolderName('');
         setShowAddModal(false);
-        // Reload folders first, then open assignment modal (only for HR)
+        // Reload folders first, then open assignment modal (for HR and Manager/COO)
         await loadFolders();
-        if (isHR) {
+        if (canManageFolders) {
           // Small delay to ensure folder is loaded
           setTimeout(() => {
             setSelectedFolder(newFolder);
@@ -162,13 +162,13 @@ export default function ProjectDetailScreen() {
   };
 
   const handleFolderPress = (folder: ProjectFolder) => {
-    // For HR: Open assignment modal when clicking folder
-    // For Manager/COO and regular users: Navigate into folder
-    if (isHR) {
+    // For HR and Manager/COO: Open assignment modal when clicking folder
+    // For regular users: Navigate into folder
+    if (canManageFolders) {
       setSelectedFolder(folder);
       setShowAssignModal(true);
     } else {
-      // Manager/COO and regular users navigate into folder when clicking
+      // Regular users navigate into folder when clicking
       handleNavigateToFolder(folder);
     }
   };

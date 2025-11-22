@@ -1076,25 +1076,61 @@ export const insertProject = (
   created_by: number,
   description?: string
 ): Promise<number> => {
-  return new Promise((resolve, reject) => {
-    try {
-      // Ensure database is initialized
-      const database = getDatabase();
-      if (!database) {
-        reject(new Error('Database not initialized'));
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        // Ensure database is initialized
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          // Test query to ensure database is ready
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const query = `INSERT INTO projects (name, description, created_by) 
+           VALUES (?, ?, ?);`;
+        const params = [name, description || null, created_by];
+        
+        const result = database.runSync(query, params);
+        resolve(result.lastInsertRowId);
         return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
       }
-      
-      const query = `INSERT INTO projects (name, description, created_by) 
-         VALUES (?, ?, ?);`;
-      const params = [name, description || null, created_by];
-      
-      const result = database.runSync(query, params);
-      resolve(result.lastInsertRowId);
-    } catch (error) {
-      console.error('Error inserting project:', error);
-      reject(error);
     }
+    console.error('Error inserting project after retries:', lastError);
+    reject(lastError || new Error('Failed to insert project'));
   });
 };
 
@@ -1300,19 +1336,61 @@ export const insertProjectFolder = (
   name: string,
   parent_folder_id?: number
 ): Promise<number> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const database = getDatabase();
-      const result = database.runSync(
-        `INSERT INTO project_folders (project_id, name, parent_folder_id) 
-         VALUES (?, ?, ?);`,
-        [project_id, name, parent_folder_id || null]
-      );
-      resolve(result.lastInsertRowId);
-    } catch (error) {
-      console.error('Error inserting project folder:', error);
-      reject(error);
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        // Ensure database is initialized
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          // Test query to ensure database is ready
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const result = database.runSync(
+          `INSERT INTO project_folders (project_id, name, parent_folder_id) 
+           VALUES (?, ?, ?);`,
+          [project_id, name, parent_folder_id || null]
+        );
+        resolve(result.lastInsertRowId);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
     }
+    console.error('Error inserting project folder after retries:', lastError);
+    reject(lastError || new Error('Failed to insert project folder'));
   });
 };
 

@@ -64,6 +64,20 @@ CREATE TABLE IF NOT EXISTS project_folders (
 );
 
 -- ============================================
+-- Subfolders Table
+-- ============================================
+CREATE TABLE IF NOT EXISTS subfolders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_folder_id INTEGER NOT NULL,
+  project_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  button_name TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_folder_id) REFERENCES project_folders(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- ============================================
 -- Folder Assignments Table
 -- ============================================
 CREATE TABLE IF NOT EXISTS folder_assignments (

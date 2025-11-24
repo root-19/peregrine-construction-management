@@ -79,6 +79,24 @@ export interface ProjectFolder {
   created_at?: string;
 }
 
+export interface Subfolder {
+  id: number;
+  project_folder_id: number;
+  project_id: number;
+  name: string;
+  button_name: string;
+  created_at?: string;
+}
+
+export interface Procurement {
+  id: number;
+  project_id: number;
+  folder_id: number;
+  name: string;
+  description?: string;
+  created_at?: string;
+}
+
 export interface ManagerCOOAccount {
   id: number;
   name: string;

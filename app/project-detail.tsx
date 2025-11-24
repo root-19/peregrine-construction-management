@@ -162,21 +162,21 @@ export default function ProjectDetailScreen() {
   };
 
   const handleFolderPress = (folder: ProjectFolder) => {
-    // For HR and Manager/COO: Open assignment modal when clicking folder
-    // For regular users: Navigate into folder
+    // Navigate to folder detail screen for all users
+    router.push(`/folder-detail?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId}&projectName=${encodeURIComponent(projectName || '')}`);
+  };
+
+  const handleAssignUsers = (folder: ProjectFolder) => {
+    // For HR and Manager/COO: Open assignment modal
     if (canManageFolders) {
       setSelectedFolder(folder);
       setShowAssignModal(true);
-    } else {
-      // Regular users navigate into folder when clicking
-      handleNavigateToFolder(folder);
     }
   };
 
   const handleNavigateToFolder = (folder: ProjectFolder) => {
-    // Navigate into folder (only via arrow button)
-    setCurrentFolderId(folder.id);
-    setFolderPath([...folderPath, folder]);
+    // Navigate to folder detail screen when clicking ">" icon
+    router.push(`/folder-detail?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId}&projectName=${encodeURIComponent(projectName || '')}`);
   };
 
   const handleBackFolder = () => {
@@ -274,6 +274,12 @@ export default function ProjectDetailScreen() {
                       <>
                         <TouchableOpacity
                           style={styles.actionButton}
+                          onPress={() => handleAssignUsers(item)}
+                        >
+                          <Ionicons name="people-outline" size={20} color="#228B22" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.actionButton}
                           onPress={() => handleRenameFolder(item)}
                         >
                           <Ionicons name="create-outline" size={20} color="#228B22" />
@@ -290,7 +296,7 @@ export default function ProjectDetailScreen() {
                       style={styles.navigateButton}
                       onPress={() => handleNavigateToFolder(item)}
                     >
-                      <Ionicons name="chevron-forward" size={24} color="#228B22" />
+                      <Ionicons name="eye-outline" size={24} color="#228B22" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -325,7 +331,7 @@ export default function ProjectDetailScreen() {
         </>
       )}
 
-      {selectedFolder && isHR && (
+      {selectedFolder && canManageFolders && (
         <AssignUserModal
           visible={showAssignModal}
           folderId={selectedFolder.id}

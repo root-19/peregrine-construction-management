@@ -65,8 +65,8 @@ export default function ProjectsScreen() {
         setProjectName('');
         setShowAddModal(false);
         await loadProjects();
-        // Open assignment modal for the newly created project (only for HR)
-        if (isHR) {
+        // Open assignment modal for the newly created project (for HR and Manager/COO)
+        if (isHR || isManagerOrCOO) {
           setTimeout(() => {
             setSelectedProject(newProject);
             setShowAssignModal(true);

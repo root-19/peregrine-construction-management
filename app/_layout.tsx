@@ -28,6 +28,7 @@ export default function RootLayout() {
           <Stack.Screen name="manager-dashboard" options={{ headerShown: false }} />
           <Stack.Screen name="projects" options={{ headerShown: false }} />
           <Stack.Screen name="project-detail" options={{ headerShown: false }} />
+          <Stack.Screen name="folder-detail" options={{ headerShown: false }} />
           <Stack.Screen name="users/dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />

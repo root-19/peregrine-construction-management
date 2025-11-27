@@ -1,6 +1,6 @@
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getProjectsForUser } from '@/peregrineDB/database';
+import { getProjectsForUser, getProjectFoldersForUser } from '@/services/api';
 import { Project } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -44,8 +44,28 @@ export default function UserDashboardScreen() {
     router.back();
   };
 
-  const handleProjectPress = (project: Project) => {
-    router.push(`/project-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+  const handleProjectPress = async (project: Project) => {
+    if (!user) return;
+    
+    try {
+      // Get folders assigned to this user for this project
+      const assignedFolders = await getProjectFoldersForUser(user.id, project.id);
+      
+      // Filter to show only root folders (no parent)
+      const rootFolders = assignedFolders.filter(f => !f.parent_folder_id);
+      
+      if (rootFolders.length === 1) {
+        // If user has exactly one assigned folder, go directly to that folder's detail (showing buttons/subfolders)
+        router.push(`/folder-detail?folderId=${rootFolders[0].id}&folderName=${encodeURIComponent(rootFolders[0].name)}&projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+      } else {
+        // If user has multiple folders or no folders, show the folders list
+        router.push(`/folder-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+      }
+    } catch (error) {
+      console.error('Error loading assigned folders:', error);
+      // Fallback: navigate to folder-detail to show folders list or empty state
+      router.push(`/folder-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+    }
   };
 
   const renderProjectItem = ({ item }: { item: Project }) => {
@@ -81,6 +101,12 @@ export default function UserDashboardScreen() {
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.messageButton} 
+            onPress={() => router.push('/messages')}
+          >
+            <Ionicons name="mail" size={24} color="white" />
           </TouchableOpacity>
         </View>
 
@@ -146,6 +172,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   backButton: {
+    padding: 8,
+  },
+  messageButton: {
     padding: 8,
   },
   content: {

@@ -251,7 +251,8 @@ export const initDatabase = (): Promise<void> => {
           password TEXT NOT NULL,
           company_name TEXT,
           position TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );`
       );
       
@@ -269,7 +270,8 @@ export const initDatabase = (): Promise<void> => {
           password TEXT NOT NULL,
           company_name TEXT,
           position TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );`
       );
       
@@ -287,7 +289,8 @@ export const initDatabase = (): Promise<void> => {
           password TEXT NOT NULL,
           company_name TEXT,
           position TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );`
       );
       
@@ -316,6 +319,7 @@ export const initDatabase = (): Promise<void> => {
           description TEXT,
           created_by INTEGER NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (created_by) REFERENCES users(id)
         );`
       );
@@ -332,6 +336,7 @@ export const initDatabase = (): Promise<void> => {
           name TEXT NOT NULL,
           parent_folder_id INTEGER,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (project_id) REFERENCES projects(id),
           FOREIGN KEY (parent_folder_id) REFERENCES project_folders(id)
         );`
@@ -350,6 +355,7 @@ export const initDatabase = (): Promise<void> => {
           name TEXT NOT NULL,
           button_name TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (project_folder_id) REFERENCES project_folders(id) ON DELETE CASCADE,
           FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
         );`
@@ -404,7 +410,8 @@ export const initDatabase = (): Promise<void> => {
         `CREATE TABLE IF NOT EXISTS positions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           position TEXT NOT NULL UNIQUE,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );`,
         8 // More retries for positions table
       );
@@ -422,6 +429,7 @@ export const initDatabase = (): Promise<void> => {
           name TEXT NOT NULL,
           description TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
           FOREIGN KEY (folder_id) REFERENCES project_folders(id) ON DELETE CASCADE
         );`

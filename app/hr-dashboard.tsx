@@ -52,6 +52,12 @@ export default function HRDashboardScreen() {
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           <View style={styles.topBarIcons}>
+            <TouchableOpacity 
+              style={styles.createAccountButton} 
+              onPress={() => router.push('/messages')}
+            >
+              <Ionicons name="mail" size={24} color="white" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.createAccountButton} onPress={handleCreatePosition}>
               <Ionicons name="briefcase-outline" size={24} color="white" />
             </TouchableOpacity>
@@ -79,7 +85,7 @@ export default function HRDashboardScreen() {
           >
             <Ionicons name="flash" size={20} color="#228B22" style={styles.lightningIcon} />
             <Text style={styles.projectsText}>Projects</Text>
-            <Text style={styles.seeAllText}>See All</Text>
+            {/* <Text style={styles.seeAllText}>See All</Text> */}
           </TouchableOpacity>
         </View>
       </View>

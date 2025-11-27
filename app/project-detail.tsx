@@ -2,7 +2,7 @@ import AddItemModal from '@/components/AddItemModal';
 import AssignUserModal from '@/components/AssignUserModal';
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, insertProjectFolder, updateProjectFolder } from '@/peregrineDB/database';
+import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, insertProjectFolder, updateProjectFolder } from '@/services/api';
 import { ProjectFolder } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,7 +34,7 @@ export default function ProjectDetailScreen() {
   const canManageFolders = isHR || isManagerOrCOO;
 
   useEffect(() => {
-    // Wait for database to be initialized before loading folders
+    // Wait for API to be initialized before loading folders
     if (projectId && isInitialized) {
       // Add a delay to ensure database is fully ready
       const timer = setTimeout(() => {
@@ -52,6 +52,10 @@ export default function ProjectDetailScreen() {
       // If user is HR or Manager/COO, show all folders. If regular user, show only assigned folders
       if (canManageFolders) {
         projectFolders = await getProjectFolders(parseInt(projectId), currentFolderId);
+        // Hide "Root" folder from Manager and COO (but show it to HR)
+        if (isManagerOrCOO && !isHR) {
+          projectFolders = projectFolders.filter(f => f.name.toLowerCase() !== 'root');
+        }
       } else if (user) {
         // For regular users, get only folders assigned to them
         const allUserFolders = await getProjectFoldersForUser(user.id, parseInt(projectId));

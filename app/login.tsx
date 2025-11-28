@@ -243,12 +243,7 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.hrInfoBox}>
-              <Text style={styles.hrInfoTitle}>Default Accounts:</Text>
-              <Text style={styles.hrInfoText}>HR: hr@peregrine.com / hr123</Text>
-              <Text style={styles.hrInfoText}>Manager: manager@peregrine.com / manager123</Text>
-              <Text style={styles.hrInfoText}>COO: coo@peregrine.com / coo123</Text>
-            </View>
+           
           </View>
         </View>
       </View>

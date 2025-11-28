@@ -64,12 +64,7 @@ export default function TermsScreen() {
           </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>6. Changes to Terms</Text>
-          <Text style={styles.sectionText}>
-            We reserve the right to revise these terms at any time without notice. By using this application you are agreeing to be bound by the then current version of these terms.
-          </Text>
-        </View>
+   
 
         <View style={styles.buttonContainer}>
           <TouchableOpacity 
@@ -142,7 +137,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 30,
+    marginBottom: 80,
     gap: 15,
   },
   button: {

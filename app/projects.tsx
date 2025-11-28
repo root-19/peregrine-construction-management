@@ -149,8 +149,8 @@ export default function ProjectsScreen() {
   };
 
   const handleNavigateToProject = (project: Project) => {
-    // Navigate to project detail
-    router.push(`/project-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+    // Navigate to project detail (NOT folder-detail)
+    router.push(`/folder-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
   };
 
   return (

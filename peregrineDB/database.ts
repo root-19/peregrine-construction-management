@@ -1,13 +1,17 @@
 import * as SQLite from 'expo-sqlite';
 
 
-import { HRAccount, ManagerCOOAccount, Position, Project, ProjectFolder, User } from './types';
+import { HRAccount, ManagerCOOAccount, Position, Procurement, Project, ProjectFolder, Subfolder, User } from './types';
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 let isDbReady = false;
 let initPromise: Promise<void> | null = null;
 let dbInstanceLogged = false; // Flag to log only once
+let initCompleted = false; // Flag to prevent multiple completion logs
 
 const getDatabase = (): SQLite.SQLiteDatabase => {
+  // Use consistent database path - always use 'data'
+  const DB_NAME = 'pere';
+  
   // If database instance doesn't exist, create it
   if (!dbInstance) {
     try {
@@ -56,35 +60,87 @@ const createTableWithRetry = async (
   database: SQLite.SQLiteDatabase,
   tableName: string,
   createSQL: string,
-  retries: number = 3
+  retries: number = 8
 ): Promise<boolean> => {
   let tableCreated = false;
   let attempts = retries;
   
   while (attempts > 0 && !tableCreated) {
     try {
-      await new Promise(resolve => setTimeout(resolve, 400));
+      // Get fresh database instance on retry
+      let currentDb = database;
+      if (attempts < retries) {
+        // Reset dbInstance and get fresh connection
+        dbInstance = null;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        try {
+          currentDb = getDatabase();
+        } catch (dbError) {
+          // Continue with original database
+        }
+      }
+      
+      // Longer wait before each attempt
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       // Check if table already exists
       let tableExists = false;
       try {
-        const checkResult = database.getFirstSync(
+        await new Promise(resolve => setTimeout(resolve, 400));
+        const checkResult = currentDb.getFirstSync(
           `SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}';`
         );
         tableExists = !!checkResult;
       } catch (checkError: any) {
-        // If check fails, assume table doesn't exist
+        // If check fails with NullPointerException, reset and retry
+        if (checkError?.message?.includes('NullPointerException')) {
+          attempts--;
+          if (attempts > 0) {
+            dbInstance = null;
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            continue;
+          }
+        }
+        // Otherwise assume table doesn't exist
       }
       
       if (tableExists) {
         console.log(`ℹ️ Table: ${tableName} (already exists)`);
         return true;
       } else {
-        // Wait before creating
-        await new Promise(resolve => setTimeout(resolve, 300));
-        database.runSync(createSQL);
-        console.log(`✅ Table created: ${tableName}`);
-        return true;
+        // Wait longer before creating
+        await new Promise(resolve => setTimeout(resolve, 600));
+        
+        // Try to create the table
+        try {
+          currentDb.runSync(createSQL);
+          // Verify table was created with longer wait
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const verifyResult = currentDb.getFirstSync(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}';`
+          );
+          if (verifyResult) {
+            console.log(`✅ Table created: ${tableName}`);
+            return true;
+          } else {
+            // Verification failed, but table might still exist - check one more time
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const finalCheck = currentDb.getFirstSync(
+              `SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}';`
+            );
+            if (finalCheck) {
+              console.log(`✅ Table created: ${tableName} (verified on second check)`);
+              return true;
+            }
+            throw new Error('Table creation verification failed');
+          }
+        } catch (createError: any) {
+          if (createError?.message?.includes('already exists') || createError?.message?.includes('duplicate')) {
+            console.log(`ℹ️ Table: ${tableName} (already exists)`);
+            return true;
+          }
+          throw createError;
+        }
       }
     } catch (error: any) {
       attempts--;
@@ -93,10 +149,27 @@ const createTableWithRetry = async (
         return true;
       } else if (error?.message?.includes('NullPointerException')) {
         if (attempts > 0) {
-          await new Promise(resolve => setTimeout(resolve, 800));
+          console.log(`⏳ Table: ${tableName} (timing issue, retrying... ${attempts} left)`);
+          dbInstance = null; // Reset on NullPointerException
+          await new Promise(resolve => setTimeout(resolve, 1500));
         } else {
-          console.log(`⚠️ Table: ${tableName} (timing issue after retries, but continuing)`);
-          return false; // Continue anyway
+          // Last attempt - try one more time with longer wait and fresh connection
+          try {
+            dbInstance = null;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const freshDb = getDatabase();
+            await new Promise(resolve => setTimeout(resolve, 800));
+            freshDb.runSync(createSQL);
+            console.log(`✅ Table created: ${tableName} (on final attempt)`);
+            return true;
+          } catch (finalError: any) {
+            if (finalError?.message?.includes('already exists') || finalError?.message?.includes('duplicate')) {
+              console.log(`ℹ️ Table: ${tableName} (already exists)`);
+              return true;
+            }
+            console.log(`⚠️ Table: ${tableName} (timing issue after all retries, but continuing)`);
+            return false; // Continue anyway
+          }
         }
       } else {
         console.log(`⚠️ Table: ${tableName} (error, but continuing):`, error?.message || 'Unknown error');
@@ -153,7 +226,7 @@ export const initDatabase = (): Promise<void> => {
       }
       
       // Additional wait before table creation
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       console.log('📁 Database file: peregrine/peregrine');
       console.log('📍 Location: App\'s document directory (managed by Expo SQLite)');
@@ -164,7 +237,7 @@ export const initDatabase = (): Promise<void> => {
       // This is safe for both new and existing databases
       
       // Wait before creating tables
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Create hr_accounts table
       await createTableWithRetry(
@@ -182,40 +255,25 @@ export const initDatabase = (): Promise<void> => {
         );`
       );
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      try {
-        // Check if table already exists
-        const managerTableExists = database.getFirstSync(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='manager_coo_accounts';"
-        );
-        
-        if (managerTableExists) {
-          console.log('ℹ️ Table: manager_coo_accounts (already exists)');
-        } else {
-          database.runSync(`
-            CREATE TABLE IF NOT EXISTS manager_coo_accounts (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              name TEXT NOT NULL,
-              last_name TEXT NOT NULL,
-              email TEXT NOT NULL UNIQUE,
-              password TEXT NOT NULL,
-              company_name TEXT,
-              position TEXT,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-          `);
-          console.log('✅ Table created: manager_coo_accounts');
-        }
-      } catch (error: any) {
-        if (error?.message?.includes('already exists') || error?.message?.includes('duplicate')) {
-          console.log('ℹ️ Table: manager_coo_accounts (already exists)');
-        } else if (error?.message?.includes('NullPointerException')) {
-          console.log('⚠️ Table: manager_coo_accounts (timing issue, but continuing)');
-        } else {
-          console.error('❌ Error creating manager_coo_accounts table:', error?.message || error);
-        }
-      }
+      // Create manager_coo_accounts table
+      await createTableWithRetry(
+        database,
+        'manager_coo_accounts',
+        `CREATE TABLE IF NOT EXISTS manager_coo_accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          password TEXT NOT NULL,
+          company_name TEXT,
+          position TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );`
+      );
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create users table
       await createTableWithRetry(
@@ -235,7 +293,7 @@ export const initDatabase = (): Promise<void> => {
       
       // Add position column if it doesn't exist (for existing databases)
       try {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 400));
         database.runSync('ALTER TABLE users ADD COLUMN position TEXT;');
         console.log('✅ Column added: users.position');
       } catch (alterError: any) {
@@ -246,7 +304,7 @@ export const initDatabase = (): Promise<void> => {
         }
       }
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create projects table
       await createTableWithRetry(
@@ -262,7 +320,7 @@ export const initDatabase = (): Promise<void> => {
         );`
       );
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create project_folders table
       await createTableWithRetry(
@@ -279,7 +337,31 @@ export const initDatabase = (): Promise<void> => {
         );`
       );
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Create subfolders table (must be after project_folders due to foreign key)
+      const subfoldersTableCreated = await createTableWithRetry(
+        database,
+        'subfolders',
+        `CREATE TABLE IF NOT EXISTS subfolders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_folder_id INTEGER NOT NULL,
+          project_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          button_name TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_folder_id) REFERENCES project_folders(id) ON DELETE CASCADE,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );`
+      );
+      
+      if (subfoldersTableCreated) {
+        console.log('✅ Subfolders table created/verified');
+      } else {
+        console.log('⚠️ Subfolders table creation had issues, but continuing');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create folder_assignments table
       await createTableWithRetry(
@@ -296,7 +378,7 @@ export const initDatabase = (): Promise<void> => {
         );`
       );
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create project_assignments table
       await createTableWithRetry(
@@ -313,7 +395,7 @@ export const initDatabase = (): Promise<void> => {
         );`
       );
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Create positions table
       await createTableWithRetry(
@@ -324,8 +406,28 @@ export const initDatabase = (): Promise<void> => {
           position TEXT NOT NULL UNIQUE,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );`,
-        5 // More retries for positions table
+        8 // More retries for positions table
       );
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Create procurement table
+      await createTableWithRetry(
+        database,
+        'procurement',
+        `CREATE TABLE IF NOT EXISTS procurement (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL,
+          folder_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (folder_id) REFERENCES project_folders(id) ON DELETE CASCADE
+        );`
+      );
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Wait a bit after table creation
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -412,16 +514,35 @@ export const initDatabase = (): Promise<void> => {
       }
       
       // Final wait to ensure everything is committed
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Try a final verification query, but don't fail if it doesn't work
-      try {
-        const testResult = database.getAllSync('SELECT name FROM sqlite_master WHERE type="table" LIMIT 1;');
-        console.log('✅ Database initialized successfully with verification');
-      } catch (verifyError: any) {
-        // Even if verification fails, mark as ready - tables were created
-        console.log('⚠️ Database initialized (verification query skipped)');
-        console.log('Note: Verification query failed but tables were created successfully');
+      // Verify tables were created
+      const requiredTables = ['hr_accounts', 'manager_coo_accounts', 'users', 'projects', 'project_folders', 'subfolders', 'folder_assignments', 'project_assignments', 'positions'];
+      let tablesVerified = 0;
+      
+      for (const tableName of requiredTables) {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const checkResult = database.getFirstSync(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}';`
+          );
+          if (checkResult) {
+            tablesVerified++;
+          }
+        } catch (verifyError: any) {
+          // Table might still exist even if check fails
+        }
+      }
+      
+      // Only log once
+      if (!initCompleted) {
+        if (tablesVerified >= requiredTables.length - 1) {
+          // At least most tables exist
+          console.log(`✅ Database initialized successfully (${tablesVerified}/${requiredTables.length} tables verified)`);
+        } else {
+          console.log(`⚠️ Database initialized (${tablesVerified}/${requiredTables.length} tables verified, but continuing)`);
+        }
+        initCompleted = true;
       }
       
       isDbReady = true;
@@ -431,14 +552,18 @@ export const initDatabase = (): Promise<void> => {
       // Don't reject immediately - check if tables were actually created
       // If it's just a test query failure, we can still mark as ready
       if (error?.message?.includes('not responsive') || error?.message?.includes('NullPointerException')) {
-        console.log('⚠️ Database initialization had timing issues, but tables may have been created');
-        console.log('⚠️ Marking as ready - database operations may still work');
+        if (!initCompleted) {
+          console.log('⚠️ Database initialization had timing issues, but tables may have been created');
+          console.log('⚠️ Marking as ready - database operations may still work');
+          initCompleted = true;
+        }
         isDbReady = true;
         // Don't reset initPromise on success - keep it so multiple calls return the same promise
         resolve(); // Resolve instead of reject - allow app to continue
       } else {
         isDbReady = false;
         initPromise = null; // Reset promise so it can be retried on actual errors
+        initCompleted = false; // Reset completion flag on error
         reject(error);
       }
     }
@@ -1077,7 +1202,7 @@ export const insertProject = (
   description?: string
 ): Promise<number> => {
   return new Promise(async (resolve, reject) => {
-    let retries = 5;
+    let retries = 8;
     let lastError: any = null;
 
     while (retries > 0) {
@@ -1086,30 +1211,40 @@ export const insertProject = (
         if (!isDbReady || !initPromise) {
           try {
             await initDatabase();
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 800));
           } catch (initError) {
             lastError = new Error('Database initialization failed');
             retries--;
-            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 1000 * (9 - retries)));
             continue;
           }
         } else {
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
+
+        // Wait before getting database
+        await new Promise(resolve => setTimeout(resolve, 400));
 
         let database: SQLite.SQLiteDatabase;
         try {
+          // Reset dbInstance if we had NullPointerException before
+          if (lastError?.message?.includes('NullPointerException')) {
+            dbInstance = null;
+            await new Promise(resolve => setTimeout(resolve, 600));
+          }
           database = getDatabase();
-          // Test query to ensure database is ready
-          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
         } catch (dbError: any) {
           lastError = dbError;
           retries--;
-          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          if (retries > 0) {
+            dbInstance = null; // Reset on error
+            await new Promise(resolve => setTimeout(resolve, 1000 * (9 - retries)));
+          }
           continue;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait before executing query
+        await new Promise(resolve => setTimeout(resolve, 300));
 
         const query = `INSERT INTO projects (name, description, created_by) 
            VALUES (?, ?, ?);`;
@@ -1120,12 +1255,18 @@ export const insertProject = (
         return;
       } catch (error: any) {
         lastError = error;
-        if (!error?.message?.includes('NullPointerException')) {
+        if (error?.message?.includes('NullPointerException')) {
+          // Reset dbInstance on NullPointerException
+          dbInstance = null;
+          if (retries > 1) {
+            console.log(`⚠️ NullPointerException on insertProject, retrying... (${retries - 1} left)`);
+          }
+        } else {
           console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
         }
         retries--;
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          await new Promise(resolve => setTimeout(resolve, 1000 * (9 - retries)));
         }
       }
     }
@@ -1568,6 +1709,450 @@ export const deleteProjectFolder = (id: number): Promise<void> => {
     }
     console.error('Error deleting project folder after retries:', lastError);
     reject(lastError || new Error('Failed to delete project folder'));
+  });
+};
+
+// ========== SUBFOLDER FUNCTIONS ==========
+
+// Insert a new subfolder (uses project_folder_id from project_folders table)
+export const insertSubfolder = (
+  project_folder_id: number,
+  project_id: number,
+  name: string,
+  button_name: string
+): Promise<number> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        // Ensure database is initialized
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const result = database.runSync(
+          `INSERT INTO subfolders (project_folder_id, project_id, name, button_name) 
+           VALUES (?, ?, ?, ?);`,
+          [project_folder_id, project_id, name, button_name]
+        );
+        const insertedId = result.lastInsertRowId;
+        console.log(`✅ Subfolder inserted successfully:`, {
+          id: insertedId,
+          project_folder_id: project_folder_id,
+          project_id: project_id,
+          name: name,
+          button_name: button_name
+        });
+        resolve(insertedId);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error inserting subfolder after retries:', lastError);
+    reject(lastError || new Error('Failed to insert subfolder'));
+  });
+};
+
+// Get subfolders by project_folder_id or project_id and button name (optional)
+export const getSubfolders = (project_folder_id?: number, project_id?: number, button_name?: string): Promise<Subfolder[]> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        // Ensure database is initialized
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        let query: string;
+        let result: Subfolder[];
+        
+        // Query by project_folder_id if provided, otherwise by project_id
+        if (project_folder_id !== undefined) {
+          // Query by specific project_folder_id
+          if (button_name) {
+            query = 'SELECT * FROM subfolders WHERE project_folder_id = ? AND button_name = ? ORDER BY name ASC;';
+            result = database.getAllSync<Subfolder>(query, [project_folder_id, button_name]);
+          } else {
+            query = 'SELECT * FROM subfolders WHERE project_folder_id = ? ORDER BY name ASC;';
+            result = database.getAllSync<Subfolder>(query, [project_folder_id]);
+          }
+        } else if (project_id !== undefined) {
+          // Query by project_id
+          if (button_name) {
+            query = 'SELECT * FROM subfolders WHERE project_id = ? AND button_name = ? ORDER BY name ASC;';
+            result = database.getAllSync<Subfolder>(query, [project_id, button_name]);
+            console.log(`🔍 Query: SELECT * FROM subfolders WHERE project_id = ${project_id} AND button_name = '${button_name}'`);
+          } else {
+            query = 'SELECT * FROM subfolders WHERE project_id = ? ORDER BY name ASC;';
+            result = database.getAllSync<Subfolder>(query, [project_id]);
+            console.log(`🔍 Query: SELECT * FROM subfolders WHERE project_id = ${project_id}`);
+          }
+          console.log(`📊 Found ${result?.length || 0} subfolders for project_id ${project_id}`);
+        } else {
+          // No filters - return empty array
+          result = [];
+        }
+        
+        resolve(result || []);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    if (lastError && !lastError?.message?.includes('NullPointerException')) {
+      console.error('Error fetching subfolders after retries:', lastError);
+    }
+    resolve([]);
+  });
+};
+
+// Delete subfolder
+export const deleteSubfolder = (id: number): Promise<void> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        database.runSync('DELETE FROM subfolders WHERE id = ?;', [id]);
+        resolve();
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error deleting subfolder after retries:', lastError);
+    reject(lastError || new Error('Failed to delete subfolder'));
+  });
+};
+
+// Update subfolder name
+export const updateSubfolder = (id: number, name: string): Promise<void> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        database.runSync('UPDATE subfolders SET name = ? WHERE id = ?;', [name, id]);
+        resolve();
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error updating subfolder after retries:', lastError);
+    reject(lastError || new Error('Failed to update subfolder'));
+  });
+};
+
+// ========== PROCUREMENT FUNCTIONS ==========
+
+// Insert a new procurement item
+export const insertProcurement = (
+  project_id: number,
+  folder_id: number,
+  name: string,
+  description?: string
+): Promise<number> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        // Ensure database is initialized
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const result = database.runSync(
+          `INSERT INTO procurement (project_id, folder_id, name, description) 
+           VALUES (?, ?, ?, ?);`,
+          [project_id, folder_id, name, description || null]
+        );
+        resolve(result.lastInsertRowId);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error inserting procurement after retries:', lastError);
+    reject(lastError || new Error('Failed to insert procurement'));
+  });
+};
+
+// Get procurement items by folder ID
+export const getProcurementByFolder = (folder_id: number): Promise<Procurement[]> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const query = 'SELECT * FROM procurement WHERE folder_id = ? ORDER BY name ASC;';
+        const result = database.getAllSync<Procurement>(query, [folder_id]);
+        resolve(result || []);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error getting procurement after retries:', lastError);
+    reject(lastError || new Error('Failed to get procurement'));
+  });
+};
+
+// Get procurement items by project ID
+export const getProcurementByProject = (project_id: number): Promise<Procurement[]> => {
+  return new Promise(async (resolve, reject) => {
+    let retries = 5;
+    let lastError: any = null;
+
+    while (retries > 0) {
+      try {
+        if (!isDbReady || !initPromise) {
+          try {
+            await initDatabase();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (initError) {
+            lastError = new Error('Database initialization failed');
+            retries--;
+            if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+            continue;
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        let database: SQLite.SQLiteDatabase;
+        try {
+          database = getDatabase();
+          database.getFirstSync('SELECT 1 FROM sqlite_master LIMIT 1;');
+        } catch (dbError: any) {
+          lastError = dbError;
+          retries--;
+          if (retries > 0) await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+          continue;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const query = 'SELECT * FROM procurement WHERE project_id = ? ORDER BY name ASC;';
+        const result = database.getAllSync<Procurement>(query, [project_id]);
+        resolve(result || []);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!error?.message?.includes('NullPointerException')) {
+          console.error(`Attempt failed. Retries left: ${retries - 1}`, error);
+        }
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (6 - retries)));
+        }
+      }
+    }
+    console.error('Error getting procurement after retries:', lastError);
+    reject(lastError || new Error('Failed to get procurement'));
   });
 };
 

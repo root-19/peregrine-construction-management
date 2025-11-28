@@ -1,4 +1,4 @@
-import { assignUserToProject, getAllPositions, getAssignedUsersForProject, getUsersByPosition, unassignUserFromProject } from '@/peregrineDB/database';
+import { assignUserToProject, getAllPositions, getAssignedUsersForProject, getUsersByPosition, unassignUserFromProject } from '@/services/api';
 import { User } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';

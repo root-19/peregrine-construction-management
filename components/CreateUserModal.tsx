@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { insertUser } from '@/peregrineDB/database';
+import { insertUser } from '@/services/api';
 
 interface CreateUserModalProps {
   visible: boolean;
@@ -14,17 +14,17 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [companyPosition, setCompanyPosition] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  const [position, setPosition] = useState('');
 
   const handleSave = async () => {
-    if (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !companyPosition.trim()) {
+    if (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
     try {
-      await insertUser(name.trim(), lastName.trim(), email.trim(), password.trim(), companyPosition.trim(), companyName.trim());
+      // insertUser parameters: name, last_name, email, password, company_name?, position?
+      await insertUser(name.trim(), lastName.trim(), email.trim(), password.trim(), undefined, position.trim());
       Alert.alert('Success', 'User account created successfully!', [
         {
           text: 'OK',
@@ -34,8 +34,7 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
             setLastName('');
             setEmail('');
             setPassword('');
-            setCompanyPosition('');
-            setCompanyName('');
+            setPosition('');
             onClose();
             onSuccess();
           },
@@ -52,8 +51,7 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
     setLastName('');
     setEmail('');
     setPassword('');
-    setCompanyPosition('');
-    setCompanyName('');
+    setPosition('');
     onClose();
   };
 
@@ -121,23 +119,13 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
                 autoCapitalize="none"
               />
 
-              <Text style={styles.label}>Company Position *</Text>
+              <Text style={styles.label}>Position *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Manager, Engineer, etc."
                 placeholderTextColor="#999"
-                value={companyPosition}
-                onChangeText={setCompanyPosition}
-                autoCapitalize="words"
-              />
-
-              <Text style={styles.label}>Company Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter company name (optional)"
-                placeholderTextColor="#999"
-                value={companyName}
-                onChangeText={setCompanyName}
+                value={position}
+                onChangeText={setPosition}
                 autoCapitalize="words"
               />
             </ScrollView>
@@ -147,9 +135,9 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.saveButton, (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !companyPosition.trim()) && styles.saveButtonDisabled]}
+                style={[styles.saveButton, (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()) && styles.saveButtonDisabled]}
                 onPress={handleSave}
-                disabled={!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !companyPosition.trim()}
+                disabled={!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()}
               >
                 <Text style={styles.saveButtonText}>Create Account</Text>
               </TouchableOpacity>

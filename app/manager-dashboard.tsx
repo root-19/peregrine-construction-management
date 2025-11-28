@@ -1,6 +1,6 @@
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getAllProjects } from '@/peregrineDB/database';
+import { getAllProjects } from '@/services/api';
 import { Project } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -84,6 +84,12 @@ export default function ManagerDashboardScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.messageButton} 
+            onPress={() => router.push('/messages')}
+          >
+            <Ionicons name="mail" size={24} color="white" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -153,6 +159,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   backButton: {
+    padding: 8,
+  },
+  messageButton: {
     padding: 8,
   },
   content: {

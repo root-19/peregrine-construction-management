@@ -1,6 +1,6 @@
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getHRAccountByEmail, getManagerCOOAccountByEmail, getUserByEmail } from '@/peregrineDB/database';
+import { login } from '@/services/api';
 import { User } from '@/peregrineDB/types';
 import { sendOTPEmail } from '@/utils/email';
 import { generateOTP, storeOTP } from '@/utils/otp';
@@ -26,150 +26,134 @@ export default function LoginScreen() {
       }
 
       if (!isInitialized) {
-        Alert.alert('Please wait', 'Database is initializing. Please try again in a moment.');
+        Alert.alert('Please wait', 'API is initializing. Please try again in a moment.');
         return;
       }
 
       setLoading(true);
 
-      // First check HR accounts
-      const hrAccount = await getHRAccountByEmail(companyEmail);
-      if (hrAccount && hrAccount.password === password) {
-        // Generate and store OTP
-        const otp = generateOTP();
-        storeOTP(companyEmail, otp);
-        
-        // Log OTP in dev mode for immediate access
-        if (__DEV__) {
-          console.log('🔐 OTP for', companyEmail, ':', otp);
+      // Try to login with different account types
+      const accountTypes: Array<'hr' | 'manager_coo' | 'user'> = ['hr', 'manager_coo', 'user'];
+      let loginSuccess = false;
+
+      for (const accountType of accountTypes) {
+        try {
+          const response = await login(companyEmail, password, accountType);
+          const account = response.account;
+          
+          // Display login information in terminal
+          const accountName = `${account.name} ${account.last_name || ''}`.trim();
+          const loginTime = new Date().toLocaleString();
+          console.log('\n========================================');
+          console.log('🔐 LOGIN SUCCESSFUL');
+          console.log('========================================');
+          console.log(`👤 Account Name: ${accountName}`);
+          console.log(`📧 Email: ${companyEmail}`);
+          console.log(`🔑 Account Type: ${accountType.toUpperCase()}`);
+          console.log(`⏰ Login Time: ${loginTime}`);
+          console.log(`🆔 User ID: ${account.id}`);
+          console.log('========================================\n');
+          
+          // Generate and store OTP
+          const otp = generateOTP();
+          storeOTP(companyEmail, otp);
+          
+          // Log OTP in dev mode for immediate access
+          if (__DEV__) {
+            console.log('🔐 OTP for', companyEmail, ':', otp);
+          }
+          
+          // Convert account to user format for context
+          const user: User = {
+            id: account.id,
+            name: account.name,
+            last_name: account.last_name || '',
+            email: account.email,
+            password: '', // Don't store password
+            company_position: account.position || (accountType === 'hr' ? 'HR' : accountType === 'manager_coo' ? 'Manager' : ''),
+            created_at: account.created_at,
+          };
+          
+          // Determine user type
+          let userType = accountType === 'hr' ? 'hr' : accountType === 'manager_coo' ? 'manager' : 'user';
+          if (accountType === 'manager_coo' && account.position?.toLowerCase().includes('coo')) {
+            userType = 'coo';
+          }
+          
+          // Navigate to OTP screen immediately (don't wait for email)
+          router.push({
+            pathname: '/otp',
+            params: {
+              email: companyEmail,
+              userType: userType,
+              userId: user.id.toString(),
+              userName: user.name,
+              userLastName: user.last_name,
+              userPosition: user.company_position || '',
+            },
+          });
+          setLoading(false);
+          
+          // Send email in background (non-blocking)
+          sendOTPEmail(companyEmail, otp).catch((error) => {
+            console.warn('Email sending failed (non-blocking):', error);
+          });
+          
+          loginSuccess = true;
+          break;
+        } catch (error: any) {
+          // Check if it's a network/connection error
+          const isNetworkError = error.message && (
+            error.message.includes('Cannot connect') ||
+            error.message.includes('Network') ||
+            error.message.includes('timeout') ||
+            error.message.includes('fetch')
+          );
+
+          if (isNetworkError) {
+            // Show network error immediately, don't try other account types
+            setLoading(false);
+            Alert.alert(
+              'Connection Error',
+              'Cannot connect to the server. Please check:\n\n' +
+              '1. Your internet connection\n' +
+              '2. Server is running and accessible\n' +
+              '3. Try again in a moment',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+
+          // Continue to next account type if this one fails (credentials error)
+          if (error.message && !error.message.includes('credentials')) {
+            console.error(`Login attempt for ${accountType} failed:`, error);
+          }
         }
-        
-        // Convert HR account to user format for context (temporary, will be set after OTP verification)
-        const user: User = {
-          id: hrAccount.id,
-          name: hrAccount.name,
-          last_name: hrAccount.last_name,
-          email: hrAccount.email,
-          password: hrAccount.password,
-          company_position: hrAccount.position || 'HR',
-          created_at: hrAccount.created_at,
-        };
-        
-        // Navigate to OTP screen immediately (don't wait for email)
-        router.push({
-          pathname: '/otp',
-          params: {
-            email: companyEmail,
-            userType: 'hr',
-            userId: user.id.toString(),
-            userName: user.name,
-            userLastName: user.last_name,
-            userPosition: user.company_position || 'HR',
-          },
-        });
-        setLoading(false);
-        
-        // Send email in background (non-blocking)
-        sendOTPEmail(companyEmail, otp).catch((error) => {
-          console.warn('Email sending failed (non-blocking):', error);
-        });
-        
-        return;
       }
 
-      // Check Manager/COO accounts (separate table)
-      const managerCOOAccount = await getManagerCOOAccountByEmail(companyEmail);
-      if (managerCOOAccount && managerCOOAccount.password === password) {
-        // Generate and store OTP
-        const otp = generateOTP();
-        storeOTP(companyEmail, otp);
-        
-        // Log OTP in dev mode for immediate access
-        if (__DEV__) {
-          console.log('🔐 OTP for', companyEmail, ':', otp);
-        }
-        
-        // Determine user type based on position
-        const position = managerCOOAccount.position?.toLowerCase() || '';
-        let userType = 'manager';
-        if (position.includes('coo')) {
-          userType = 'coo';
-        }
-        
-        // Convert Manager/COO account to user format for context
-        const user: User = {
-          id: managerCOOAccount.id,
-          name: managerCOOAccount.name,
-          last_name: managerCOOAccount.last_name,
-          email: managerCOOAccount.email,
-          password: managerCOOAccount.password,
-          company_position: managerCOOAccount.position || 'Manager',
-          created_at: managerCOOAccount.created_at,
-        };
-        
-        // Navigate to OTP screen immediately (don't wait for email)
-        router.push({
-          pathname: '/otp',
-          params: {
-            email: companyEmail,
-            userType: userType,
-            userId: user.id.toString(),
-            userName: user.name,
-            userLastName: user.last_name,
-            userPosition: user.company_position || 'Manager',
-          },
-        });
-        setLoading(false);
-        
-        // Send email in background (non-blocking)
-        sendOTPEmail(companyEmail, otp).catch((error) => {
-          console.warn('Email sending failed (non-blocking):', error);
-        });
-        
-        return;
-      }
-
-      // Check regular users
-      const user = await getUserByEmail(companyEmail);
-      
-      if (user && user.password === password) {
-        // Generate and store OTP
-        const otp = generateOTP();
-        storeOTP(companyEmail, otp);
-        
-        // Log OTP in dev mode for immediate access
-        if (__DEV__) {
-          console.log('🔐 OTP for', companyEmail, ':', otp);
-        }
-        
-        // Check if user is HR
-        const isHR = user.company_position?.toLowerCase().includes('hr') || false;
-        
-        // Navigate to OTP screen immediately (don't wait for email)
-        router.push({
-          pathname: '/otp',
-          params: {
-            email: companyEmail,
-            userType: isHR ? 'hr' : 'user',
-            userId: user.id.toString(),
-            userName: user.name,
-            userLastName: user.last_name,
-            userPosition: user.company_position || '',
-          },
-        });
-        setLoading(false);
-        
-        // Send email in background (non-blocking)
-        sendOTPEmail(companyEmail, otp).catch((error) => {
-          console.warn('Email sending failed (non-blocking):', error);
-        });
-      } else {
-        Alert.alert('Error', 'Invalid email or password');
+      if (!loginSuccess) {
+        Alert.alert('Error', 'Invalid email or password. Please check your credentials and try again.');
         setLoading(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'An error occurred during login');
+      
+      // Check if it's a network error
+      const isNetworkError = error.message && (
+        error.message.includes('Cannot connect') ||
+        error.message.includes('Network') ||
+        error.message.includes('timeout')
+      );
+
+      if (isNetworkError) {
+        Alert.alert(
+          'Connection Error',
+          'Cannot connect to the server. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', 'An error occurred during login. Please try again.');
+      }
       setLoading(false);
     }
   };

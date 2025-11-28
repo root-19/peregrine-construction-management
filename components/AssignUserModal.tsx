@@ -1,4 +1,4 @@
-import { assignUserToFolder, getAllPositions, getAssignedUsersForFolder, getUsersByPosition, unassignUserFromFolder } from '@/peregrineDB/database';
+import { assignUserToFolder, getAllPositions, getAssignedUsersForFolder, getUsersByPosition, unassignUserFromFolder } from '@/services/api';
 import { User } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';

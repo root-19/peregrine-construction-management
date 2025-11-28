@@ -1,5 +1,5 @@
 import { useDatabase } from '@/hooks/use-database';
-import { insertPosition } from '@/peregrineDB/database';
+import { insertPosition } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -20,7 +20,7 @@ export default function CreatePositionModal({ visible, onClose, onSuccess }: Cre
       return;
     }
 
-    // Wait for database to be initialized
+    // Wait for API to be initialized
     if (!isInitialized) {
       Alert.alert('Error', 'Database is not ready. Please wait a moment and try again.');
       return;
@@ -46,7 +46,7 @@ export default function CreatePositionModal({ visible, onClose, onSuccess }: Cre
       console.error('Error creating position:', error);
       if (error?.message?.includes('UNIQUE constraint') || error?.message?.includes('already exists')) {
         Alert.alert('Error', 'This position already exists');
-      } else if (error?.message?.includes('Database not initialized')) {
+      } else if (error?.message?.includes('API not initialized')) {
         Alert.alert('Error', 'Database is not ready. Please try again.');
       } else {
         Alert.alert('Error', error.message || 'Failed to create position');

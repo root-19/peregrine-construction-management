@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS project_folders (
 -- ============================================
 CREATE TABLE IF NOT EXISTS subfolders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  project_folder_id INTEGER NOT NULL,
+  project_folder_id INTEGER NOT NULL,cd
   project_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   button_name TEXT NOT NULL,

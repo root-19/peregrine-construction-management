@@ -1,8 +1,8 @@
 import AddItemModal from '@/components/AddItemModal';
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { deleteProjectFolder, getProjectFolders, getSubfolders, insertProjectFolder, insertSubfolder, updateProjectFolder } from '@/peregrineDB/database';
-import { Subfolder } from '@/peregrineDB/types';
+import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, getSubfolders, insertProjectFolder, insertSubfolder, updateProjectFolder } from '@/services/api';
+import { ProjectFolder, Subfolder } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -32,6 +32,22 @@ export default function FolderDetailScreen() {
   
   const { isInitialized } = useDatabase();
   const { user, isHR } = useUser();
+  
+  // Debug: Log when folderId changes
+  useEffect(() => {
+    const currentFolderId = folderId || folderIdParam;
+    const currentProjectId = projectId || projectIdParam;
+    console.log('🔍 Folder Detail Screen State:', {
+      folderId,
+      folderIdParam,
+      currentFolderId,
+      projectId,
+      projectIdParam,
+      currentProjectId,
+      isInitialized,
+      hasFolderId: !!(folderId || folderIdParam),
+    });
+  }, [folderId, folderIdParam, projectId, projectIdParam, isInitialized]);
   const [activeTab, setActiveTab] = useState<'DOCUMENTS' | 'MATERIAL REQUEST'>('DOCUMENTS');
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [folderNameInput, setFolderNameInput] = useState<string>(folderNameParam || '');
@@ -50,6 +66,9 @@ export default function FolderDetailScreen() {
   const [subfolders, setSubfolders] = useState<{ [key: string]: Subfolder[] }>({});
   const [newSubfolderName, setNewSubfolderName] = useState<{ [key: string]: string }>({});
   const [showAddInput, setShowAddInput] = useState<{ [key: string]: boolean }>({});
+  
+  // State for folders (when showing folders list instead of subfolders)
+  const [folders, setFolders] = useState<ProjectFolder[]>([]);
 
   // Check if user is Manager or COO
   const isManagerOrCOO =
@@ -60,6 +79,40 @@ export default function FolderDetailScreen() {
 
   // HR, Manager, and COO can manage folders
   const canManageFolders = isHR || isManagerOrCOO;
+
+  // Load folders assigned to user (when no folderId is provided)
+  const loadFolders = async () => {
+    const currentProjectId = projectId || projectIdParam;
+    
+    if (!currentProjectId) {
+      console.warn('⚠️ Cannot load folders - missing projectId:', { projectId, projectIdParam });
+      return;
+    }
+    
+    try {
+      const projectIdNum = parseInt(currentProjectId);
+      let projectFolders: ProjectFolder[] = [];
+      
+      // If user is HR or Manager/COO, show all folders. If regular user, show only assigned folders
+      if (canManageFolders) {
+        projectFolders = await getProjectFolders(projectIdNum, undefined);
+        // Hide "Root" folder from Manager and COO (but show it to HR)
+        if (isManagerOrCOO && !isHR) {
+          projectFolders = projectFolders.filter(f => f.name.toLowerCase() !== 'root');
+        }
+      } else if (user) {
+        // For regular users, get only folders assigned to them
+        projectFolders = await getProjectFoldersForUser(user.id, projectIdNum);
+        // Show only root folders (no parent)
+        projectFolders = projectFolders.filter(f => !f.parent_folder_id);
+      }
+      
+      setFolders(projectFolders || []);
+    } catch (error) {
+      console.error('Error loading folders:', error);
+      setFolders([]);
+    }
+  };
 
   // Load all subfolders automatically (not tied to a specific button)
   const loadAllSubfolders = async () => {
@@ -80,14 +133,19 @@ export default function FolderDetailScreen() {
         ? await getSubfolders(parseInt(currentFolderId), projectIdNum)
         : await getSubfolders(undefined, projectIdNum); // Query by project_id
       
-      console.log(`📁 Loaded ${allSubfolders.length} subfolders for ${currentFolderId ? `project_folder_id ${currentFolderId}` : `project ID ${projectIdNum}`}`);
-      console.log(`📁 Subfolders:`, allSubfolders.map(f => ({ id: f.id, name: f.name, button_name: f.button_name, project_folder_id: f.project_folder_id })));
+      // Filter out subfolders if their parent folder is named 'Root' and the user is Manager/COO
+      const filteredSubfolders = (isManagerOrCOO && folderNameParam === 'Root')
+        ? [] // If current folder is 'Root' and user is Manager/COO, show no subfolders
+        : allSubfolders;
+      
+      console.log(`📁 Loaded ${filteredSubfolders.length} subfolders for ${currentFolderId ? `project_folder_id ${currentFolderId}` : `project ID ${projectIdNum}`}`);
+      console.log(`📁 Subfolders:`, filteredSubfolders.map(f => ({ id: f.id, name: f.name, button_name: f.button_name, project_folder_id: f.project_folder_id })));
       
       // Group subfolders by button name
       const subfoldersMap: { [key: string]: Subfolder[] } = {};
-      ['Procurement', 'Community', 'Relations', 'Permits and Licenses', 'Admin'].forEach(btn => {
+      ['Procurement', 'Community Relations', 'Permits and Licenses', 'Admin'].forEach(btn => {
         // Filter subfolders for this button
-        subfoldersMap[btn] = allSubfolders.filter(sf => sf.button_name === btn);
+        subfoldersMap[btn] = filteredSubfolders.filter(sf => sf.button_name === btn);
       });
       setSubfolders(subfoldersMap);
     } catch (error) {
@@ -96,7 +154,7 @@ export default function FolderDetailScreen() {
     }
   };
 
-  // Wait for database initialization and load all subfolders automatically
+  // Wait for API initialization and load all subfolders automatically
   useEffect(() => {
     // Always set loading to false after a reasonable delay
     const timer = setTimeout(async () => {
@@ -127,12 +185,18 @@ export default function FolderDetailScreen() {
         return;
       }
       
-      // Automatically load folders (root folders if no folderId, subfolders if folderId exists)
+      // Automatically load folders or subfolders based on whether folderId exists
       if (currentProjectId && isInitialized) {
         try {
-          await loadAllSubfolders();
+          if (!currentFolderId) {
+            // No folderId: show folders assigned to user
+            await loadFolders();
+          } else {
+            // Has folderId: show subfolders within that folder
+            await loadAllSubfolders();
+          }
         } catch (error) {
-          console.error('Error loading subfolders on init:', error);
+          console.error('Error loading data on init:', error);
         }
       } else {
         console.warn('⚠️ Screen initialized but missing params:', { 
@@ -372,7 +436,16 @@ export default function FolderDetailScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.title}>{folderName || folderNameParam || projectName || projectNameParam || 'Project Folders'}</Text>
+          <Text style={styles.title}>
+            {(() => {
+              const displayName = folderName || folderNameParam || projectName || projectNameParam || 'Project Folders';
+              // Hide "Root" folder name from Manager/COO (but show it to HR)
+              if (isManagerOrCOO && !isHR && displayName.toLowerCase() === 'root') {
+                return projectName || projectNameParam || 'Project Folders';
+              }
+              return displayName;
+            })()}
+          </Text>
           {canManageFolders && (folderId || folderIdParam) && (
             <View style={styles.headerActions}>
               <TouchableOpacity style={styles.actionButton} onPress={handleRenameFolder}>
@@ -402,7 +475,42 @@ export default function FolderDetailScreen() {
                 <Text style={styles.backButtonText}>Go Back</Text>
               </TouchableOpacity>
             </View>
+          ) : !(folderId || folderIdParam) ? (
+            // Show folders list when no folderId is provided (user clicked project from dashboard)
+            <>
+              {folders.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="folder-outline" size={64} color="#999" />
+                  <Text style={styles.emptyText}>No folders assigned yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    {canManageFolders 
+                      ? 'Tap the + button to add a folder' 
+                      : 'Contact your HR to get assigned to folders'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.foldersListContainer}>
+                  {folders.map((folder) => (
+                    <TouchableOpacity
+                      key={folder.id}
+                      style={styles.folderCard}
+                      onPress={() => {
+                        // Navigate to folder-detail with folderId to show subfolders
+                        router.push(`/folder-detail?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId || projectIdParam}&projectName=${encodeURIComponent(projectName || projectNameParam || '')}`);
+                      }}
+                    >
+                      <View style={styles.folderCardContent}>
+                        <Ionicons name="folder" size={32} color="#228B22" style={styles.folderIcon} />
+                        <Text style={styles.folderName}>{folder.name}</Text>
+                        <Ionicons name="chevron-forward" size={24} color="#999" />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
           ) : (
+            // Show buttons (Procurement, Community Relations, etc.) when folderId exists
             <>
               {/* Tabs */}
               <View style={styles.tabContainer}>
@@ -426,7 +534,7 @@ export default function FolderDetailScreen() {
 
           {/* Buttons */}
           <View style={styles.buttonsContainer}>
-            {['Procurement', 'Community', 'Relations', 'Permits and Licenses', 'Admin'].map((buttonName) => (
+            {['Procurement', 'Community Relations', 'Permits and Licenses', 'Admin'].map((buttonName) => (
               <View key={buttonName} style={styles.buttonWrapper}>
                 <TouchableOpacity
                   style={styles.button}
@@ -739,6 +847,51 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  foldersListContainer: {
+    flex: 1,
+    paddingTop: 10,
+  },
+  folderCard: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  folderCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  folderName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
 });
 

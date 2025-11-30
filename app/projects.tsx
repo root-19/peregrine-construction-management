@@ -5,7 +5,7 @@ import { useDatabase } from '@/hooks/use-database';
 import { deleteProject, getAllProjects, insertProject, updateProject } from '@/services/api';
 import { Project } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Alert, FlatList, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -14,6 +14,7 @@ export default function ProjectsScreen() {
   const router = useRouter();
   const { user, isHR } = useUser();
   const { isInitialized } = useDatabase();
+  const params = useLocalSearchParams<{ showList?: string }>();
   const [projects, setProjects] = useState<Project[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -21,7 +22,7 @@ export default function ProjectsScreen() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showProjectsList, setShowProjectsList] = useState(false);
+  const [showProjectsList, setShowProjectsList] = useState(params.showList === 'true');
   
   // Check if user is Manager or COO
   const isManagerOrCOO = user?.company_position?.toLowerCase().includes('manager') || 

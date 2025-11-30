@@ -14,7 +14,12 @@ export default function HRDashboardScreen() {
   const [showCreatePositionModal, setShowCreatePositionModal] = useState(false);
 
   const handleProjectsPress = () => {
-    router.push('/projects');
+    router.push('/projects?showList=true');
+  };
+
+  const handleDocumentsPress = () => {
+    // Navigate to Documents/Material Request screen
+    router.push('/folder-detail');
   };
 
   const handleBack = () => {
@@ -58,6 +63,9 @@ export default function HRDashboardScreen() {
             >
               <Ionicons name="mail" size={24} color="white" />
             </TouchableOpacity>
+            {/* <TouchableOpacity style={styles.createAccountButton} onPress={handleDocumentsPress}>
+              <Ionicons name="briefcase-outline" size={24} color="white" />
+            </TouchableOpacity> */}
             <TouchableOpacity style={styles.createAccountButton} onPress={handleCreatePosition}>
               <Ionicons name="briefcase-outline" size={24} color="white" />
             </TouchableOpacity>
@@ -83,7 +91,7 @@ export default function HRDashboardScreen() {
             style={styles.projectsButton}
             onPress={handleProjectsPress}
           >
-            <Ionicons name="flash" size={20} color="#228B22" style={styles.lightningIcon} />
+            {/* <Ionicons name="flash" size={20} color="#228B22" style={styles.lightningIcon} /> */}
             <Text style={styles.projectsText}>Projects</Text>
             {/* <Text style={styles.seeAllText}>See All</Text> */}
           </TouchableOpacity>
@@ -178,16 +186,14 @@ const styles = StyleSheet.create({
   },
   lightningIcon: {
     marginRight: 8,
+    // textAlign: 'center',
   },
   projectsText: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#228B22',
     flex: 1,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: '#999',
+    textAlign: 'center',
   },
 });
 

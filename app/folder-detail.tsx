@@ -1,4 +1,5 @@
 import AddItemModal from '@/components/AddItemModal';
+import AssignUserModal from '@/components/AssignUserModal';
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
 import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, getSubfolders, insertProjectFolder, insertSubfolder, updateProjectFolder } from '@/services/api';
@@ -69,6 +70,10 @@ export default function FolderDetailScreen() {
   
   // State for folders (when showing folders list instead of subfolders)
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
+  
+  // State for subfolder assignment modal
+  const [showAssignSubfolderModal, setShowAssignSubfolderModal] = useState(false);
+  const [selectedSubfolder, setSelectedSubfolder] = useState<Subfolder | null>(null);
 
   // Check if user is Manager or COO
   const isManagerOrCOO =
@@ -128,10 +133,18 @@ export default function FolderDetailScreen() {
       const projectIdNum = parseInt(currentProjectId);
       
       // Get all subfolders from the new subfolders table
-      // If folderId exists, use it as project_folder_id. Otherwise, query by project_id
-      const allSubfolders = currentFolderId 
-        ? await getSubfolders(parseInt(currentFolderId), projectIdNum)
-        : await getSubfolders(undefined, projectIdNum); // Query by project_id
+      // Query by project_id only - subfolders are project-wide, not folder-specific
+      // All subfolders for a project should be visible regardless of which folder you're viewing
+      const allSubfolders = await getSubfolders(undefined, projectIdNum);
+      
+      console.log(`🔍 Query params: project_id=${projectIdNum} (querying all subfolders for project)`);
+      console.log(`🔍 API returned ${allSubfolders.length} subfolders:`, allSubfolders.map(sf => ({
+        id: sf.id,
+        name: sf.name,
+        button_name: sf.button_name,
+        project_folder_id: sf.project_folder_id,
+        project_id: sf.project_id
+      })));
       
       // Filter out subfolders if their parent folder is named 'Root' and the user is Manager/COO
       const filteredSubfolders = (isManagerOrCOO && folderNameParam === 'Root')
@@ -144,9 +157,13 @@ export default function FolderDetailScreen() {
       // Group subfolders by button name
       const subfoldersMap: { [key: string]: Subfolder[] } = {};
       ['Procurement', 'Community Relations', 'Permits and Licenses', 'Admin'].forEach(btn => {
-        // Filter subfolders for this button
-        subfoldersMap[btn] = filteredSubfolders.filter(sf => sf.button_name === btn);
+        // Filter subfolders for this button (case-insensitive comparison)
+        subfoldersMap[btn] = filteredSubfolders.filter(sf => 
+          sf.button_name && sf.button_name.trim().toLowerCase() === btn.toLowerCase()
+        );
+        console.log(`📁 ${btn}: ${subfoldersMap[btn].length} subfolders`, subfoldersMap[btn].map(sf => sf.name));
       });
+      console.log(`📁 Final subfolders map:`, Object.keys(subfoldersMap).map(key => `${key}: ${subfoldersMap[key].length}`));
       setSubfolders(subfoldersMap);
     } catch (error) {
       console.error('Error loading subfolders:', error);
@@ -401,12 +418,14 @@ export default function FolderDetailScreen() {
         table: 'subfolders'
       });
       
-      // Clear input and hide add form
+      // Clear input (keep form visible)
       setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
-      setShowAddInput({ ...showAddInput, [buttonName]: false });
       
       // Reload all subfolders to show the newly added one
-      await loadAllSubfolders();
+      // Add a small delay to ensure the database has been updated
+      setTimeout(async () => {
+        await loadAllSubfolders();
+      }, 500);
       
       Alert.alert('Success', `Subfolder "${name}" added successfully to database`);
     } catch (error) {
@@ -422,6 +441,14 @@ export default function FolderDetailScreen() {
     }
     setShowAddInput({ ...showAddInput, [buttonName]: true });
     setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
+  };
+
+  const handleSubfolderPress = (subfolder: Subfolder) => {
+    if (canManageFolders) {
+      // For HR/Manager/COO: Show assignment modal
+      setSelectedSubfolder(subfolder);
+      setShowAssignSubfolderModal(true);
+    }
   };
 
   return (
@@ -555,10 +582,18 @@ export default function FolderDetailScreen() {
                     {/* Subfolders list - shows all folders with this folder as parent */}
                     {subfolders[buttonName] && subfolders[buttonName].length > 0 ? (
                       subfolders[buttonName].map((subfolder) => (
-                        <View key={subfolder.id} style={styles.subfolderItem}>
+                        <TouchableOpacity
+                          key={subfolder.id}
+                          style={styles.subfolderItem}
+                          onPress={() => handleSubfolderPress(subfolder)}
+                          disabled={!canManageFolders}
+                        >
                           <Ionicons name="folder" size={20} color="#228B22" style={styles.folderIcon} />
                           <Text style={styles.subfolderText}>{subfolder.name}</Text>
-                        </View>
+                          {canManageFolders && (
+                            <Ionicons name="people-outline" size={18} color="#228B22" style={styles.assignIcon} />
+                          )}
+                        </TouchableOpacity>
                       ))
                     ) : (
                       <View style={styles.emptySubfolderContainer}>
@@ -567,7 +602,7 @@ export default function FolderDetailScreen() {
                     )}
                     
                     {/* Input field to create new folder - shows automatically when button is expanded */}
-                    {canManageFolders && showAddInput[buttonName] && (
+                    {canManageFolders && (
                       <View style={styles.addSubfolderContainer}>
                         <Text style={styles.inputLabel}>Create New Folder:</Text>
                         <TextInput
@@ -589,11 +624,10 @@ export default function FolderDetailScreen() {
                           <TouchableOpacity
                             style={[styles.addSubfolderButton, styles.cancelButton]}
                             onPress={() => {
-                              setShowAddInput({ ...showAddInput, [buttonName]: false });
                               setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
                             }}
                           >
-                            <Text style={styles.addSubfolderButtonText}>Cancel</Text>
+                            <Text style={styles.addSubfolderButtonText}>Clear</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -623,6 +657,21 @@ export default function FolderDetailScreen() {
             onSave={handleSaveRename}
             buttonText="Save"
           />
+          {selectedSubfolder && (
+            <AssignUserModal
+              visible={showAssignSubfolderModal}
+              folderId={selectedSubfolder.project_folder_id}
+              folderName={selectedSubfolder.name}
+              onClose={() => {
+                setShowAssignSubfolderModal(false);
+                setSelectedSubfolder(null);
+              }}
+              onSuccess={() => {
+                // Reload subfolders to refresh any changes
+                loadAllSubfolders();
+              }}
+            />
+          )}
         </>
       )}
     </ImageBackground>
@@ -746,6 +795,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     marginBottom: 4,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   folderIcon: {
     marginRight: 8,
@@ -753,6 +806,10 @@ const styles = StyleSheet.create({
   subfolderText: {
     fontSize: 14,
     color: '#000',
+    flex: 1,
+  },
+  assignIcon: {
+    marginLeft: 8,
   },
   addSubfolderContainer: {
     marginTop: 8,

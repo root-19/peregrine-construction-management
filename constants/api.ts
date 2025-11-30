@@ -7,7 +7,7 @@ import Constants from 'expo-constants';
 
 const getBaseURL = () => {
   // Production API URL (only use if you have a production server running)
-  const PRODUCTION_URL = 'http://localhost:8000/api';
+  const PRODUCTION_URL = 'https://backend-peregrine.online/api';
   
   // Set to true to use production server, false for local development
   // IMPORTANT: 
@@ -39,7 +39,7 @@ const getBaseURL = () => {
   // For web, directly connect to Laravel backend
   // Web can access localhost:8000 directly
   if (Platform.OS === 'web') {
-    return 'http://localhost:8000/api';
+    return 'https://backend-peregrine.online/api';
   }
 
   // For Android (physical device or emulator)
@@ -52,6 +52,7 @@ const getBaseURL = () => {
     // For physical device using Expo Go, use your computer's local IP
     // Update this IP if your network IP changes (check with: ipconfig on Windows)
     return 'http://192.168.1.7:8000/api'; // Your computer's local IP
+    // https://backend-peregrine.online/api
   }
 
   // For iOS simulator, can use localhost

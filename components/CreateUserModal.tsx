@@ -1,7 +1,8 @@
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, Modal, KeyboardAvoidingView, Platform, ScrollView, Alert, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { insertUser } from '@/services/api';
+import { useState, useEffect } from 'react';
+import { insertUser, getAllUsers } from '@/services/api';
+import { User } from '@/peregrineDB/types';
 
 interface CreateUserModalProps {
   visible: boolean;
@@ -15,6 +16,9 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [position, setPosition] = useState('');
+  const [showUsersList, setShowUsersList] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()) {
@@ -52,8 +56,40 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
     setEmail('');
     setPassword('');
     setPosition('');
+    setShowUsersList(false);
     onClose();
   };
+
+  const handleViewAllUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const allUsers = await getAllUsers();
+      setUsers(allUsers);
+      setShowUsersList(true);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      Alert.alert('Error', 'Failed to load users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleBackToCreate = () => {
+    setShowUsersList(false);
+  };
+
+  const renderUserItem = ({ item }: { item: User }) => (
+    <View style={styles.userItem}>
+      <View style={styles.userAvatar}>
+        <Ionicons name="person" size={24} color="#228B22" />
+      </View>
+      <View style={styles.userInfo}>
+        <Text style={styles.userName}>{item.name} {item.last_name}</Text>
+        <Text style={styles.userEmail}>{item.email}</Text>
+        <Text style={styles.userPosition}>{item.company_position || item.position || 'No position'}</Text>
+      </View>
+    </View>
+  );
 
   return (
     <Modal
@@ -69,79 +105,120 @@ export default function CreateUserModal({ visible, onClose, onSuccess }: CreateU
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.header}>
-              <Text style={styles.title}>Create User Account</Text>
+              <Text style={styles.title}>{showUsersList ? 'All Users' : 'Create User Account'}</Text>
               <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>First Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter first name"
-                placeholderTextColor="#999"
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-              />
+            {showUsersList ? (
+              // Show Users List
+              <>
+                {loadingUsers ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#228B22" />
+                    <Text style={styles.loadingText}>Loading users...</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={users}
+                    keyExtractor={(item) => item.id.toString()}
+                    renderItem={renderUserItem}
+                    style={styles.usersList}
+                    ListEmptyComponent={
+                      <View style={styles.emptyContainer}>
+                        <Ionicons name="people-outline" size={48} color="#ccc" />
+                        <Text style={styles.emptyText}>No users found</Text>
+                      </View>
+                    }
+                  />
+                )}
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={styles.backButton} onPress={handleBackToCreate}>
+                    <Ionicons name="arrow-back" size={18} color="#228B22" />
+                    <Text style={styles.backButtonText}>Back to Create</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              // Show Create User Form
+              <>
+                <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.label}>First Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter first name"
+                    placeholderTextColor="#999"
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                  />
 
-              <Text style={styles.label}>Last Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter last name"
-                placeholderTextColor="#999"
-                value={lastName}
-                onChangeText={setLastName}
-                autoCapitalize="words"
-              />
+                  <Text style={styles.label}>Last Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter last name"
+                    placeholderTextColor="#999"
+                    value={lastName}
+                    onChangeText={setLastName}
+                    autoCapitalize="words"
+                  />
 
-              <Text style={styles.label}>Email *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter email"
-                placeholderTextColor="#999"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+                  <Text style={styles.label}>Email *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter email"
+                    placeholderTextColor="#999"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
 
-              <Text style={styles.label}>Password *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter password"
-                placeholderTextColor="#999"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-              />
+                  <Text style={styles.label}>Password *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter password"
+                    placeholderTextColor="#999"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
 
-              <Text style={styles.label}>Position *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Manager, Engineer, etc."
-                placeholderTextColor="#999"
-                value={position}
-                onChangeText={setPosition}
-                autoCapitalize="words"
-              />
-            </ScrollView>
+                  <Text style={styles.label}>Position *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Manager, Engineer, etc."
+                    placeholderTextColor="#999"
+                    value={position}
+                    onChangeText={setPosition}
+                    autoCapitalize="words"
+                  />
+                </ScrollView>
 
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()) && styles.saveButtonDisabled]}
-                onPress={handleSave}
-                disabled={!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()}
-              >
-                <Text style={styles.saveButtonText}>Create Account</Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={styles.viewUsersButton} onPress={handleViewAllUsers} disabled={loadingUsers}>
+                    {loadingUsers ? (
+                      <ActivityIndicator size="small" color="#228B22" />
+                    ) : (
+                      <>
+                        <Ionicons name="people" size={18} color="#228B22" />
+                        <Text style={styles.viewUsersButtonText}>View All Users</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveButton, (!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()) && styles.saveButtonDisabled]}
+                    onPress={handleSave}
+                    disabled={!name.trim() || !lastName.trim() || !email.trim() || !password.trim() || !position.trim()}
+                  >
+                    <Text style={styles.saveButtonText}>Create Account</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -208,16 +285,34 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
-  cancelButton: {
+  viewUsersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#228B22',
+    gap: 6,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
+  viewUsersButtonText: {
+    color: '#228B22',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#228B22',
+    gap: 6,
+  },
+  backButtonText: {
+    color: '#228B22',
+    fontSize: 14,
     fontWeight: '600',
   },
   saveButton: {
@@ -233,6 +328,62 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  usersList: {
+    maxHeight: 400,
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  userEmail: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  userPosition: {
+    fontSize: 12,
+    color: '#228B22',
+    marginTop: 2,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 14,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: 12,
+    color: '#999',
+    fontSize: 14,
   },
 });
 

@@ -37,30 +37,40 @@ const getBaseURL = () => {
   // This connects to your LOCAL Laravel backend running on your computer
 
   // For web, directly connect to Laravel backend
-  // Web can access localhost:8000 directly
+  // Web can access localhost:8000 directly or use your IP
   if (Platform.OS === 'web') {
-    return 'https://backend-peregrine.online/api';
+    // Use localhost for web (same machine)
+    return 'http://localhost:8000/api';
+    // Or use your IP if accessing from another device:
+    // return 'http://112.204.110.195:8000/api';
   }
 
   // For Android (physical device or emulator)
-  // - Physical device (Expo Go): Use your computer's local network IP (e.g., 192.168.1.7)
+  // - Physical device (Expo Go): Use your computer's IP address
   // - Emulator: Use 10.0.2.2 (special IP for Android emulator)
   // IMPORTANT: 
   //   - localhost/127.0.0.1 won't work from physical devices
   //   - Make sure your phone and computer are on the SAME WiFi network
   if (Platform.OS === 'android') {
-    // For physical device using Expo Go, use your computer's local IP
-    // Update this IP if your network IP changes (check with: ipconfig on Windows)
-    return 'http://192.168.1.7:8000/api'; // Your computer's local IP
-    // https://backend-peregrine.online/api
+    // For Android physical device - use your computer's actual IP
+    return 'http://192.168.1.17:8000/api';
+    
+    // For Android emulator, use this instead:
+    // return 'http://10.0.2.2:8000/api';
+    
+    // For production, use this instead:
+    // return 'https://backend-peregrine.online/api';
   }
 
-  // For iOS simulator, can use localhost
+  // For iOS simulator, can use localhost or your IP
   if (Platform.OS === 'ios') {
+    // Use localhost if running on same machine
     return 'http://localhost:8000/api';
+    // Or use your IP if on different device:
+    // return 'http://112.204.110.195:8000/api';
   }
 
-  // Default fallback
+  // Default fallback - use localhost
   return 'http://localhost:8000/api';
 };
 
@@ -83,6 +93,8 @@ export const API_ENDPOINTS = {
   LOGIN: '/login',
   LOGOUT: '/logout',
   ME: '/me',
+  CHECK_EMAIL: '/check-email',
+  RESET_PASSWORD: '/reset-password',
 
   // User endpoints
   USERS: '/users',
@@ -112,6 +124,10 @@ export const API_ENDPOINTS = {
   SUBFOLDERS: '/subfolders',
   SUBFOLDER_BY_ID: (id: string | number) => `/subfolders/${id}`,
 
+  // Document Folder endpoints
+  DOCUMENT_FOLDERS: '/document-folders',
+  DOCUMENT_FOLDER_BY_ID: (id: string | number) => `/document-folders/${id}`,
+
   // Position endpoints
   POSITIONS: '/positions',
   POSITION_BY_ID: (id: string | number) => `/positions/${id}`,
@@ -138,5 +154,11 @@ export const API_ENDPOINTS = {
         MESSAGES_UNREAD_COUNT: '/messages/unread-count',
         MESSAGES_WITH_USER: (userId: string | number) => `/messages/${userId}`,
         MESSAGES_MARK_READ: (userId: string | number) => `/messages/${userId}/read`,
+
+        // Incident Report endpoints
+        INCIDENT_REPORTS: '/incident-reports',
+        INCIDENT_REPORTS_MY: '/incident-reports/my-reports',
+        INCIDENT_REPORT_BY_ID: (id: string | number) => `/incident-reports/${id}`,
+        INCIDENT_REPORT_UPDATE_STATUS: (id: string | number) => `/incident-reports/${id}/status`,
       };
 

@@ -1,12 +1,12 @@
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { getAllUsers, getAllHRAccounts, getAllManagerCOOAccounts, getConversations } from '@/services/api';
-import { User, HRAccount, ManagerCOOAccount } from '@/peregrineDB/types';
+import { getAllUsers, getAllHRAccounts, getAllManagerCOOAccounts, getConversations, getIncidentReports, getMyIncidentReports } from '@/services/api';
+import { User, HRAccount, ManagerCOOAccount, IncidentReport } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, View, TextInput } from 'react-native';
+import { FlatList, ImageBackground, StyleSheet, Text, TouchableOpacity, View, TextInput, RefreshControl } from 'react-native';
 
 interface MessageUser {
   id: number;
@@ -22,18 +22,106 @@ interface MessageUser {
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { user } = useUser();
+  const { user, isHR } = useUser();
   const { isInitialized } = useDatabase();
   const [allUsers, setAllUsers] = useState<MessageUser[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<MessageUser[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'MESSAGE' | 'INCIDENT REPORT'>('MESSAGE');
+  const [incidentReports, setIncidentReports] = useState<IncidentReport[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Check if user is Manager or COO
+  const isManagerOrCOO = user?.company_position?.toLowerCase().includes('manager') || 
+                         user?.company_position?.toLowerCase().includes('coo');
+  const canViewAllReports = isHR || isManagerOrCOO;
 
   useEffect(() => {
     if (isInitialized) {
       loadAllUsers();
+      loadIncidentReports();
     }
-  }, [isInitialized]);
+  }, [isInitialized, activeTab]);
+
+  const loadIncidentReports = async () => {
+    try {
+      // HR/Manager/COO see all reports, regular users see only their own
+      if (canViewAllReports) {
+        const reports = await getIncidentReports();
+        setIncidentReports(reports);
+      } else {
+        const reports = await getMyIncidentReports();
+        setIncidentReports(reports);
+      }
+    } catch (error) {
+      console.error('Error loading incident reports:', error);
+      setIncidentReports([]);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadIncidentReports();
+    setRefreshing(false);
+  };
+
+  const handleCreateIncidentReport = () => {
+    router.push('/incident-report-form');
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return '#FFA500';
+      case 'reviewed': return '#2196F3';
+      case 'resolved': return '#228B22';
+      default: return '#666';
+    }
+  };
+
+  const renderIncidentReport = ({ item }: { item: IncidentReport }) => (
+    <View style={styles.incidentCard}>
+      <View style={styles.incidentHeader}>
+        <View style={styles.incidentInfo}>
+          <Text style={styles.incidentTitle}>Incident Report #{item.id}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+          </View>
+        </View>
+        <Text style={styles.incidentDate}>
+          {new Date(item.created_at).toLocaleDateString()}
+        </Text>
+      </View>
+      
+      <View style={styles.incidentDetails}>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Reported by:</Text>
+          <Text style={styles.detailValue}>{item.reported_by_name}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Location:</Text>
+          <Text style={styles.detailValue}>{item.location}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Date of Incident:</Text>
+          <Text style={styles.detailValue}>
+            {new Date(item.date_of_incident).toLocaleDateString()} {item.time_of_incident} {item.time_period}
+          </Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Injured:</Text>
+          <Text style={[styles.detailValue, item.is_someone_injured && { color: '#ff4444' }]}>
+            {item.is_someone_injured ? 'Yes' : 'No'}
+          </Text>
+        </View>
+      </View>
+      
+      <Text style={styles.descriptionLabel}>Description:</Text>
+      <Text style={styles.descriptionText} numberOfLines={3}>
+        {item.description_of_accident}
+      </Text>
+    </View>
+  );
 
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -175,6 +263,7 @@ export default function MessagesScreen() {
         userId: messageUser.id.toString(),
         userName: `${messageUser.name} ${messageUser.last_name}`,
         userType: messageUser.type,
+        chatType: activeTab === 'MESSAGE' ? 'message' : 'incident',
       },
     } as any);
   };
@@ -239,54 +328,134 @@ export default function MessagesScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.title}>Messages</Text>
+          <Text style={styles.title}>{activeTab === 'MESSAGE' ? 'Messages' : 'Incident Reports'}</Text>
           <View style={styles.headerRight} />
         </View>
 
+        {/* Tabs Container */}
+        <View style={styles.tabsContainer}>
+          <View style={styles.tabsBox}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'MESSAGE' && styles.activeTab]}
+              onPress={() => setActiveTab('MESSAGE')}
+            >
+              <Text style={[styles.tabText, activeTab === 'MESSAGE' && styles.activeTabText]}>
+                MESSAGE
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.tabDivider} />
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'INCIDENT REPORT' && styles.activeTab]}
+              onPress={() => setActiveTab('INCIDENT REPORT')}
+            >
+              <Text style={[styles.tabText, activeTab === 'INCIDENT REPORT' && styles.activeTabText]}>
+                INCIDENT REPORT
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.content}>
-          <View style={styles.searchContainer}>
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search users..."
-                placeholderTextColor="#999"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {searchQuery.length > 0 && (
+          {activeTab === 'MESSAGE' ? (
+            // MESSAGE TAB CONTENT
+            <>
+              <View style={styles.searchContainer}>
+                <View style={styles.searchBar}>
+                  <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search users..."
+                    placeholderTextColor="#999"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setSearchQuery('')}
+                      style={styles.clearButton}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#666" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading users...</Text>
+                </View>
+              ) : filteredUsers.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={64} color="#999" />
+                  <Text style={styles.emptyText}>No users found</Text>
+                  <Text style={styles.emptySubtext}>
+                    {searchQuery ? 'Try a different search term' : 'No users available'}
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredUsers}
+                  renderItem={renderUserItem}
+                  keyExtractor={(item) => `${item.type}-${item.id}`}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                />
+              )}
+            </>
+          ) : (
+            // INCIDENT REPORT TAB CONTENT
+            <>
+              {/* Create button for regular users */}
+              {!canViewAllReports && (
                 <TouchableOpacity
-                  onPress={() => setSearchQuery('')}
-                  style={styles.clearButton}
+                  style={styles.createReportButton}
+                  onPress={handleCreateIncidentReport}
                 >
-                  <Ionicons name="close-circle" size={20} color="#666" />
+                  <Ionicons name="add-circle" size={24} color="white" />
+                  <Text style={styles.createReportButtonText}>Create New Incident Report</Text>
                 </TouchableOpacity>
               )}
-            </View>
-          </View>
 
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading users...</Text>
-            </View>
-          ) : filteredUsers.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={64} color="#999" />
-              <Text style={styles.emptyText}>No users found</Text>
-              <Text style={styles.emptySubtext}>
-                {searchQuery ? 'Try a different search term' : 'No users available'}
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filteredUsers}
-              renderItem={renderUserItem}
-              keyExtractor={(item) => `${item.type}-${item.id}`}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
+              {/* Title for the list */}
+              <View style={styles.incidentListHeader}>
+                <Text style={styles.incidentListTitle}>
+                  {canViewAllReports ? 'All Incident Reports' : 'My Incident Reports'}
+                </Text>
+                <TouchableOpacity onPress={onRefresh}>
+                  <Ionicons name="refresh" size={20} color="#228B22" />
+                </TouchableOpacity>
+              </View>
+
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading incident reports...</Text>
+                </View>
+              ) : incidentReports.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="document-text-outline" size={64} color="#999" />
+                  <Text style={styles.emptyText}>No incident reports</Text>
+                  <Text style={styles.emptySubtext}>
+                    {canViewAllReports 
+                      ? 'No incident reports have been submitted yet' 
+                      : 'Tap the button above to create a new report'
+                    }
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={incidentReports}
+                  renderItem={renderIncidentReport}
+                  keyExtractor={(item) => item.id.toString()}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                  refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#228B22']} />
+                  }
+                />
+              )}
+            </>
           )}
         </View>
       </View>
@@ -302,7 +471,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(34, 139, 34, 0.85)',
+    // backgroundColor: 'rgba(34, 139, 34, 0.85)',
   },
   header: {
     flexDirection: 'row',
@@ -324,6 +493,40 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     width: 40,
+  },
+  tabsContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+  },
+  tabsBox: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'white',
+    overflow: 'hidden',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTab: {
+    backgroundColor: 'white',
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'white',
+  },
+  activeTabText: {
+    color: '#228B22',
+    fontWeight: 'bold',
+  },
+  tabDivider: {
+    width: 1,
+    backgroundColor: 'white',
   },
   content: {
     flex: 1,
@@ -467,6 +670,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  // Incident Report Styles
+  createReportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#228B22',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    gap: 8,
+  },
+  createReportButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  incidentListHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  incidentListTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  incidentCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  incidentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  incidentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  incidentTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  incidentDate: {
+    fontSize: 12,
+    color: '#666',
+  },
+  incidentDetails: {
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    width: 110,
+  },
+  detailValue: {
+    fontSize: 12,
+    color: '#333',
+    flex: 1,
+  },
+  descriptionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 4,
+  },
+  descriptionText: {
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 18,
   },
 });
 

@@ -53,12 +53,15 @@ CREATE TABLE IF NOT EXISTS projects (
 -- ============================================
 -- Project Folders Table
 -- ============================================
+-- Project Folders Table
+-- ============================================
 CREATE TABLE IF NOT EXISTS project_folders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   parent_folder_id INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (project_id) REFERENCES projects(id),
   FOREIGN KEY (parent_folder_id) REFERENCES project_folders(id)
 );

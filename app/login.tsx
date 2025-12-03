@@ -1,13 +1,14 @@
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { login } from '@/services/api';
+import { login, checkEmailExists, resetPassword } from '@/services/api';
 import { User } from '@/peregrineDB/types';
 import { sendOTPEmail } from '@/utils/email';
 import { generateOTP, storeOTP } from '@/utils/otp';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { Alert, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ImageBackground, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -17,11 +18,25 @@ export default function LoginScreen() {
   const [companyPosition, setCompanyPosition] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Forgot Password States
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verifiedAccountName, setVerifiedAccountName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleLogin = async () => {
     try {
       if (!companyEmail || !password) {
         Alert.alert('Error', 'Please fill in all required fields');
+        return;
+      }
+
+      if (!companyPosition) {
+        Alert.alert('Error', 'Please enter your company position');
         return;
       }
 
@@ -32,14 +47,50 @@ export default function LoginScreen() {
 
       setLoading(true);
 
-      // Try to login with different account types
-      const accountTypes: Array<'hr' | 'manager_coo' | 'user'> = ['hr', 'manager_coo', 'user'];
-      let loginSuccess = false;
+      // Determine account type based on position input
+      const positionLower = companyPosition.toLowerCase().trim();
+      let accountTypesToTry: Array<'hr' | 'manager_coo' | 'user'> = [];
+      
+      // Map position input to account types
+      if (positionLower === 'hr' || positionLower.includes('human resource')) {
+        accountTypesToTry = ['hr'];
+      } else if (positionLower === 'manager' || positionLower === 'coo' || positionLower.includes('manager') || positionLower.includes('chief')) {
+        accountTypesToTry = ['manager_coo'];
+      } else if (positionLower === 'user' || positionLower === 'employee' || positionLower.includes('staff')) {
+        accountTypesToTry = ['user'];
+      } else {
+        // Try all if position doesn't match known types
+        accountTypesToTry = ['hr', 'manager_coo', 'user'];
+      }
 
-      for (const accountType of accountTypes) {
+      let loginSuccess = false;
+      let positionMismatch = false;
+
+      for (const accountType of accountTypesToTry) {
         try {
           const response = await login(companyEmail, password, accountType);
           const account = response.account;
+          
+          // Verify if the position matches
+          const accountPosition = account.position || (accountType === 'hr' ? 'HR' : accountType === 'manager_coo' ? 'Manager' : 'Employee');
+          const accountPositionLower = accountPosition.toLowerCase();
+          
+          // Check if entered position matches the account position
+          if (accountTypesToTry.length === 1) {
+            // User specified a specific position, verify it matches
+            const isPositionMatch = 
+              accountPositionLower.includes(positionLower) || 
+              positionLower.includes(accountPositionLower) ||
+              (positionLower === 'hr' && accountType === 'hr') ||
+              (positionLower.includes('manager') && accountType === 'manager_coo') ||
+              (positionLower === 'coo' && accountType === 'manager_coo') ||
+              ((positionLower === 'user' || positionLower === 'employee') && accountType === 'user');
+            
+            if (!isPositionMatch) {
+              positionMismatch = true;
+              continue;
+            }
+          }
           
           // Display login information in terminal
           const accountName = `${account.name} ${account.last_name || ''}`.trim();
@@ -132,8 +183,20 @@ export default function LoginScreen() {
       }
 
       if (!loginSuccess) {
-        Alert.alert('Error', 'Invalid email or password. Please check your credentials and try again.');
         setLoading(false);
+        if (positionMismatch) {
+          Alert.alert(
+            'Wrong Position',
+            'The position you entered does not match your account. Please check your company position and try again.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Login Failed',
+            'Invalid email, password, or position. Please check your credentials and try again.',
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error: any) {
       console.error('Login error:', error);
@@ -159,8 +222,93 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    // TODO: Implement forgot password functionality
-    alert('Forgot password functionality coming soon');
+    setShowForgotPassword(true);
+    setForgotEmail('');
+    setEmailVerified(false);
+    setVerifiedAccountName('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleCheckEmail = async () => {
+    if (!forgotEmail.trim()) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const result = await checkEmailExists(forgotEmail.trim());
+      
+      if (result.exists) {
+        setEmailVerified(true);
+        setVerifiedAccountName(result.name || 'User');
+        Alert.alert('Email Found', `Account found for ${result.name}. Please enter your new password.`);
+      } else {
+        Alert.alert('Email Not Found', 'No account found with this email address. Please check and try again.');
+      }
+    } catch (error: any) {
+      console.error('Error checking email:', error);
+      Alert.alert('Error', 'Failed to verify email. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!newPassword.trim()) {
+      Alert.alert('Error', 'Please enter a new password');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const result = await resetPassword(forgotEmail.trim(), newPassword);
+      
+      if (result.success) {
+        Alert.alert(
+          'Password Reset Successful',
+          'Your password has been updated. You can now login with your new password.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setShowForgotPassword(false);
+                setForgotEmail('');
+                setEmailVerified(false);
+                setNewPassword('');
+                setConfirmPassword('');
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.message || 'Failed to reset password');
+      }
+    } catch (error: any) {
+      console.error('Error resetting password:', error);
+      Alert.alert('Error', 'Failed to reset password. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const closeForgotPassword = () => {
+    setShowForgotPassword(false);
+    setForgotEmail('');
+    setEmailVerified(false);
+    setNewPassword('');
+    setConfirmPassword('');
   };
 
   return (
@@ -231,6 +379,117 @@ export default function LoginScreen() {
           </View>
         </View>
       </View>
+
+      {/* Forgot Password Modal */}
+      <Modal
+        visible={showForgotPassword}
+        transparent
+        animationType="slide"
+        onRequestClose={closeForgotPassword}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {emailVerified ? 'Reset Password' : 'Forgot Password'}
+              </Text>
+              <TouchableOpacity onPress={closeForgotPassword} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {!emailVerified ? (
+              // Step 1: Enter Email
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Enter your email address to reset your password
+                </Text>
+                
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter your email"
+                  placeholderTextColor="#999"
+                  value={forgotEmail}
+                  onChangeText={setForgotEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <TouchableOpacity
+                  style={[styles.modalButton, forgotLoading && styles.modalButtonDisabled]}
+                  onPress={handleCheckEmail}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>Verify Email</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              // Step 2: Enter New Password
+              <>
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="checkmark-circle" size={20} color="#228B22" />
+                  <Text style={styles.verifiedText}>
+                    Email verified for: {verifiedAccountName}
+                  </Text>
+                </View>
+
+                <Text style={styles.modalSubtitle}>
+                  Enter your new password
+                </Text>
+                
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="New Password"
+                  placeholderTextColor="#999"
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Confirm New Password"
+                  placeholderTextColor="#999"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+
+                <TouchableOpacity
+                  style={[styles.modalButton, forgotLoading && styles.modalButtonDisabled]}
+                  onPress={handleResetPassword}
+                  disabled={forgotLoading}
+                >
+                  {forgotLoading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.modalButtonText}>Reset Password</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.backToEmailButton}
+                  onPress={() => {
+                    setEmailVerified(false);
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                >
+                  <Ionicons name="arrow-back" size={16} color="#228B22" />
+                  <Text style={styles.backToEmailText}>Back to Email</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -334,6 +593,92 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     marginTop: 2,
+  },
+  // Forgot Password Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#228B22',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+  },
+  modalInput: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 16,
+  },
+  modalButton: {
+    backgroundColor: '#228B22',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  verifiedText: {
+    color: '#228B22',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  backToEmailButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 4,
+  },
+  backToEmailText: {
+    color: '#228B22',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

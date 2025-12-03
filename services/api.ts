@@ -1,4 +1,4 @@
-import { HRAccount, ManagerCOOAccount, Position, Procurement, Project, ProjectFolder, Subfolder, User } from '@/peregrineDB/types';
+import { DocumentFolder, HRAccount, IncidentReport, ManagerCOOAccount, Position, Procurement, Project, ProjectFolder, Subfolder, User } from '@/peregrineDB/types';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { API_BASE_URL, API_ENDPOINTS } from '@/constants/api';
@@ -169,6 +169,31 @@ export const login = async (
   }
 
   return response;
+};
+
+export const checkEmailExists = async (email: string): Promise<{ exists: boolean; account_type?: string; name?: string }> => {
+  try {
+    const response = await apiRequest<{ exists: boolean; account_type: string; name: string }>(API_ENDPOINTS.CHECK_EMAIL, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    return response;
+  } catch (error: any) {
+    if (error.message?.includes('404') || error.message?.includes('not found')) {
+      return { exists: false };
+    }
+    throw error;
+  }
+};
+
+export const resetPassword = async (email: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+  return apiRequest<{ success: boolean; message: string }>(API_ENDPOINTS.RESET_PASSWORD, {
+    method: 'POST',
+    body: JSON.stringify({ 
+      email, 
+      new_password: newPassword 
+    }),
+  });
 };
 
 export const logout = async (): Promise<void> => {
@@ -672,6 +697,121 @@ export const getUnreadCount = async (): Promise<{ unread_count: number }> => {
 export const markMessagesAsRead = async (userId: number): Promise<void> => {
   return apiRequest<void>(API_ENDPOINTS.MESSAGES_MARK_READ(userId), {
     method: 'PUT',
+  });
+};
+
+// ========== DOCUMENT FOLDER FUNCTIONS ==========
+
+export const getDocumentFolders = async (
+  project_id?: number,
+  category?: 'Procurement' | 'Community',
+  user_id?: number
+): Promise<DocumentFolder[]> => {
+  const params = new URLSearchParams();
+  if (project_id) params.append('project_id', project_id.toString());
+  if (category) params.append('category', category);
+  if (user_id) params.append('user_id', user_id.toString());
+  return apiRequest<DocumentFolder[]>(`${API_ENDPOINTS.DOCUMENT_FOLDERS}?${params.toString()}`);
+};
+
+export const createDocumentFolder = async (
+  project_id: number,
+  project_name: string,
+  user_id: number,
+  account: 'user' | 'hr' | 'manager_coo',
+  folder_name: string,
+  category: 'Procurement' | 'Community'
+): Promise<DocumentFolder> => {
+  return apiRequest<DocumentFolder>(API_ENDPOINTS.DOCUMENT_FOLDERS, {
+    method: 'POST',
+    body: JSON.stringify({
+      project_id,
+      project_name,
+      user_id,
+      account,
+      folder_name,
+      category,
+    }),
+  });
+};
+
+export const updateDocumentFolder = async (
+  id: number,
+  folder_name?: string,
+  category?: 'Procurement' | 'Community'
+): Promise<DocumentFolder> => {
+  const body: any = {};
+  if (folder_name) body.folder_name = folder_name;
+  if (category) body.category = category;
+  
+  return apiRequest<DocumentFolder>(API_ENDPOINTS.DOCUMENT_FOLDER_BY_ID(id), {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+};
+
+export const deleteDocumentFolder = async (id: number): Promise<void> => {
+  return apiRequest<void>(API_ENDPOINTS.DOCUMENT_FOLDER_BY_ID(id), {
+    method: 'DELETE',
+  });
+};
+
+// ==================== INCIDENT REPORT FUNCTIONS ====================
+
+// Get all incident reports (for HR, Manager, COO)
+export const getIncidentReports = async (status?: string): Promise<IncidentReport[]> => {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  return apiRequest<IncidentReport[]>(`${API_ENDPOINTS.INCIDENT_REPORTS}?${params.toString()}`);
+};
+
+// Get my incident reports (for regular users)
+export const getMyIncidentReports = async (): Promise<IncidentReport[]> => {
+  return apiRequest<IncidentReport[]>(API_ENDPOINTS.INCIDENT_REPORTS_MY);
+};
+
+// Submit a new incident report (for regular users)
+export const submitIncidentReport = async (data: {
+  reported_by_name: string;
+  reported_by_position: string;
+  date_of_report: string;
+  location: string;
+  date_of_incident: string;
+  time_of_incident: string;
+  time_period: 'AM' | 'PM';
+  description_of_accident: string;
+  is_someone_injured: boolean;
+  injury_description?: string;
+  people_involved?: { name: string; phone_number: string; position: string }[];
+}): Promise<IncidentReport> => {
+  return apiRequest<IncidentReport>(API_ENDPOINTS.INCIDENT_REPORTS, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+// Update incident report status (for HR, Manager, COO)
+export const updateIncidentReportStatus = async (
+  id: number,
+  status: 'pending' | 'reviewed' | 'resolved',
+  reviewerType: 'hr' | 'manager_coo',
+  resolution?: string
+): Promise<IncidentReport> => {
+  return apiRequest<IncidentReport>(API_ENDPOINTS.INCIDENT_REPORT_UPDATE_STATUS(id), {
+    method: 'PUT',
+    body: JSON.stringify({ status, reviewer_type: reviewerType, resolution }),
+  });
+};
+
+// Get incident report by ID
+export const getIncidentReportById = async (id: number): Promise<IncidentReport> => {
+  return apiRequest<IncidentReport>(API_ENDPOINTS.INCIDENT_REPORT_BY_ID(id));
+};
+
+// Delete incident report
+export const deleteIncidentReport = async (id: number): Promise<void> => {
+  return apiRequest<void>(API_ENDPOINTS.INCIDENT_REPORT_BY_ID(id), {
+    method: 'DELETE',
   });
 };
 

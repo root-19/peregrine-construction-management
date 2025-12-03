@@ -101,15 +101,43 @@ export default function FolderDetailScreen() {
       // If user is HR or Manager/COO, show all folders. If regular user, show only assigned folders
       if (canManageFolders) {
         projectFolders = await getProjectFolders(projectIdNum, undefined);
-        // Hide "Root" folder from Manager and COO (but show it to HR)
-        if (isManagerOrCOO && !isHR) {
-          projectFolders = projectFolders.filter(f => f.name.toLowerCase() !== 'root');
-        }
       } else if (user) {
         // For regular users, get only folders assigned to them
         projectFolders = await getProjectFoldersForUser(user.id, projectIdNum);
         // Show only root folders (no parent)
         projectFolders = projectFolders.filter(f => !f.parent_folder_id);
+      }
+      
+      // If no folders exist, create a default "Root" folder and navigate to it
+      if (projectFolders.length === 0) {
+        try {
+          const newFolderId = await insertProjectFolder(projectIdNum, 'Root', undefined);
+          console.log('📁 Created default Root folder:', newFolderId);
+          // Set the folder state to show DOCUMENTS/MATERIAL REQUEST tabs
+          setFolderId(newFolderId.toString());
+          setFolderName('Root');
+          // Load subfolders for this new folder
+          await loadAllSubfolders();
+          return;
+        } catch (error) {
+          console.error('Error creating default folder:', error);
+        }
+      }
+      
+      // If there's exactly one folder (Root), automatically navigate to it to show tabs
+      if (projectFolders.length === 1) {
+        const rootFolder = projectFolders[0];
+        console.log('📁 Auto-navigating to single folder:', rootFolder.name);
+        setFolderId(rootFolder.id.toString());
+        setFolderName(rootFolder.name);
+        // Load subfolders for this folder
+        await loadAllSubfolders();
+        return;
+      }
+      
+      // Multiple folders exist - show the list (but filter Root for Manager/COO)
+      if (isManagerOrCOO && !isHR) {
+        projectFolders = projectFolders.filter(f => f.name.toLowerCase() !== 'root');
       }
       
       setFolders(projectFolders || []);
@@ -170,6 +198,39 @@ export default function FolderDetailScreen() {
       setSubfolders({});
     }
   };
+
+  // Auto-create Root folder if none exists for HR/Manager/COO
+  useEffect(() => {
+    const autoCreateRootFolder = async () => {
+      const currentFolderId = folderId || folderIdParam;
+      const currentProjectId = projectId || projectIdParam;
+      
+      // Only auto-create if: no folderId, has projectId, is HR/Manager/COO, is initialized, and folders list is empty
+      if (!currentFolderId && currentProjectId && canManageFolders && isInitialized && folders.length === 0 && !loading) {
+        try {
+          const projectIdNum = parseInt(currentProjectId);
+          // Check if folders exist first
+          const existingFolders = await getProjectFolders(projectIdNum, undefined);
+          if (existingFolders.length === 0) {
+            const newFolderId = await insertProjectFolder(projectIdNum, 'Root', undefined);
+            console.log('📁 Auto-created Root folder:', newFolderId);
+            setFolderId(newFolderId.toString());
+            setFolderName('Root');
+            await loadAllSubfolders();
+          }
+        } catch (error) {
+          console.error('Error auto-creating Root folder:', error);
+        }
+      }
+    };
+    
+    if (isInitialized) {
+      const timer = setTimeout(() => {
+        autoCreateRootFolder();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isInitialized, projectId, projectIdParam, folderId, folderIdParam, canManageFolders, folders.length, loading]);
 
   // Wait for API initialization and load all subfolders automatically
   useEffect(() => {
@@ -444,11 +505,19 @@ export default function FolderDetailScreen() {
   };
 
   const handleSubfolderPress = (subfolder: Subfolder) => {
-    if (canManageFolders) {
-      // For HR/Manager/COO: Show assignment modal
-      setSelectedSubfolder(subfolder);
-      setShowAssignSubfolderModal(true);
-    }
+    // Navigate to document-system page for all users
+    const currentProjectId = projectId || projectIdParam;
+    const currentProjectName = projectName || projectNameParam || '';
+    router.push({
+      pathname: '/document-system',
+      params: {
+        folderId: subfolder.project_folder_id.toString(),
+        subfolderId: subfolder.id.toString(),
+        subfolderName: subfolder.name,
+        projectId: currentProjectId || '',
+        projectName: currentProjectName,
+      },
+    } as any);
   };
 
   return (
@@ -473,18 +542,53 @@ export default function FolderDetailScreen() {
               return displayName;
             })()}
           </Text>
-          {canManageFolders && (folderId || folderIdParam) && (
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.actionButton} onPress={handleRenameFolder}>
-                <Ionicons name="create-outline" size={24} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton} onPress={handleDeleteFolder}>
-                <Ionicons name="trash-outline" size={24} color="white" />
-              </TouchableOpacity>
-            </View>
-          )}
-          {canManageFolders && !(folderId || folderIdParam) && <View style={styles.headerActions} />}
-          {!canManageFolders && <View style={styles.headerActions} />}
+          <View style={styles.headerActions}>
+            {/* Edit and Delete icons - only for HR/Manager/COO */}
+            {canManageFolders && (
+              <>
+                <TouchableOpacity style={styles.actionButton} onPress={handleRenameFolder}>
+                  <Ionicons name="create-outline" size={24} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.actionButton} onPress={handleDeleteFolder}>
+                  <Ionicons name="trash-outline" size={24} color="white" />
+                </TouchableOpacity>
+              </>
+            )}
+            {/* Navigate to Documents/Material Request - for ALL accounts */}
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              onPress={async () => {
+                // If no folderId, create or get Root folder first
+                if (!(folderId || folderIdParam)) {
+                  const currentProjectId = projectId || projectIdParam;
+                  if (currentProjectId) {
+                    try {
+                      const projectIdNum = parseInt(currentProjectId);
+                      const existingFolders = await getProjectFolders(projectIdNum, undefined);
+                      
+                      if (existingFolders.length > 0) {
+                        // Use first existing folder
+                        setFolderId(existingFolders[0].id.toString());
+                        setFolderName(existingFolders[0].name);
+                      } else {
+                        // Create Root folder
+                        const newFolderId = await insertProjectFolder(projectIdNum, 'Root', undefined);
+                        setFolderId(newFolderId.toString());
+                        setFolderName('Root');
+                      }
+                      await loadAllSubfolders();
+                    } catch (error) {
+                      console.error('Error navigating to documents:', error);
+                      Alert.alert('Error', 'Failed to load documents. Please try again.');
+                    }
+                  }
+                }
+                // If already has folderId, the tabs are already shown
+              }}
+            >
+              <Ionicons name="chevron-forward" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.content}>
@@ -511,7 +615,7 @@ export default function FolderDetailScreen() {
                   <Text style={styles.emptyText}>No folders assigned yet</Text>
                   <Text style={styles.emptySubtext}>
                     {canManageFolders 
-                      ? 'Tap the + button to add a folder' 
+                      ? 'Creating Root folder automatically...' 
                       : 'Contact your HR to get assigned to folders'}
                   </Text>
                 </View>

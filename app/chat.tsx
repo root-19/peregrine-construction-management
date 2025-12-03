@@ -54,7 +54,6 @@ export default function ChatScreen() {
       if (messages.length === 0) {
         setLoading(true);
       }
-      // Pass userType as query parameter
       const fetchedMessages = await getMessages(userId, userType);
       setMessages(fetchedMessages);
     } catch (error) {

@@ -88,6 +88,18 @@ export interface Subfolder {
   created_at?: string;
 }
 
+export interface DocumentFolder {
+  id: number;
+  project_id: number;
+  project_name: string;
+  user_id: number;
+  account: 'user' | 'hr' | 'manager_coo';
+  folder_name: string;
+  category: 'Procurement' | 'Community';
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Procurement {
   id: number;
   project_id: number;
@@ -124,6 +136,36 @@ export interface Position {
 }
 
 export interface CreatePositionInput {
+  position: string;
+}
+
+export interface IncidentReport {
+  id: number;
+  reported_by_id: number;
+  reported_by_name: string;
+  reported_by_position: string;
+  date_of_report: string;
+  location: string;
+  date_of_incident: string;
+  time_of_incident: string;
+  time_period: 'AM' | 'PM';
+  description_of_accident: string;
+  is_someone_injured: boolean;
+  injury_description?: string;
+  people_involved?: PersonInvolved[];
+  status: 'pending' | 'reviewed' | 'resolved';
+  resolution?: string;
+  reviewed_by_id?: number;
+  reviewed_by_type?: 'hr' | 'manager_coo';
+  reviewed_at?: string;
+  resolved_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PersonInvolved {
+  name: string;
+  phone_number: string;
   position: string;
 }
 

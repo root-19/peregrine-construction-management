@@ -166,8 +166,16 @@ export default function ProjectDetailScreen() {
   };
 
   const handleFolderPress = (folder: ProjectFolder) => {
-    // Navigate to folder detail screen for all users
-    router.push(`/folder-detail?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId}&projectName=${encodeURIComponent(projectName || '')}`);
+    // Navigate to document-system screen for all users
+    router.push({
+      pathname: '/document-system',
+      params: {
+        folderId: folder.id.toString(),
+        folderName: folder.name,
+        projectId: projectId || '',
+        projectName: projectName || '',
+      },
+    } as any);
   };
 
   const handleAssignUsers = (folder: ProjectFolder) => {
@@ -180,7 +188,7 @@ export default function ProjectDetailScreen() {
 
   const handleNavigateToFolder = (folder: ProjectFolder) => {
     // Navigate to folder detail screen when clicking ">" icon
-    router.push(`/folder-detail?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId}&projectName=${encodeURIComponent(projectName || '')}`);
+    router.push(`/document-system?folderId=${folder.id}&folderName=${encodeURIComponent(folder.name)}&projectId=${projectId}&projectName=${encodeURIComponent(projectName || '')}`);
   };
 
   const handleBackFolder = () => {

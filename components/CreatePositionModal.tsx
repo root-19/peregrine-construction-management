@@ -1,8 +1,9 @@
 import { useDatabase } from '@/hooks/use-database';
-import { insertPosition } from '@/services/api';
+import { insertPosition, getAllPositionsFromTable, deletePosition } from '@/services/api';
+import { Position } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList, ActivityIndicator } from 'react-native';
 
 interface CreatePositionModalProps {
   visible: boolean;
@@ -13,6 +14,9 @@ interface CreatePositionModalProps {
 export default function CreatePositionModal({ visible, onClose, onSuccess }: CreatePositionModalProps) {
   const [position, setPosition] = useState('');
   const { isInitialized } = useDatabase();
+  const [showPositionsList, setShowPositionsList] = useState(false);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loadingPositions, setLoadingPositions] = useState(false);
 
   const handleSave = async () => {
     if (!position.trim()) {
@@ -56,8 +60,70 @@ export default function CreatePositionModal({ visible, onClose, onSuccess }: Cre
 
   const handleClose = () => {
     setPosition('');
+    setShowPositionsList(false);
     onClose();
   };
+
+  const handleViewAllPositions = async () => {
+    setLoadingPositions(true);
+    try {
+      const allPositions = await getAllPositionsFromTable();
+      setPositions(allPositions);
+      setShowPositionsList(true);
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+      Alert.alert('Error', 'Failed to load positions');
+    } finally {
+      setLoadingPositions(false);
+    }
+  };
+
+  const handleBackToCreate = () => {
+    setShowPositionsList(false);
+  };
+
+  const handleDeletePosition = (pos: Position) => {
+    Alert.alert(
+      'Delete Position',
+      `Are you sure you want to delete "${pos.position}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePosition(pos.id);
+              // Refresh the list
+              const allPositions = await getAllPositionsFromTable();
+              setPositions(allPositions);
+              Alert.alert('Success', 'Position deleted successfully');
+            } catch (error) {
+              console.error('Error deleting position:', error);
+              Alert.alert('Error', 'Failed to delete position');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderPositionItem = ({ item }: { item: Position }) => (
+    <View style={styles.positionItem}>
+      <View style={styles.positionIcon}>
+        <Ionicons name="briefcase" size={24} color="#228B22" />
+      </View>
+      <View style={styles.positionInfo}>
+        <Text style={styles.positionName}>{item.position}</Text>
+      </View>
+      <TouchableOpacity 
+        style={styles.deleteButton}
+        onPress={() => handleDeletePosition(item)}
+      >
+        <Ionicons name="trash-outline" size={20} color="#ff4444" />
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <Modal
@@ -73,36 +139,77 @@ export default function CreatePositionModal({ visible, onClose, onSuccess }: Cre
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.header}>
-              <Text style={styles.title}>Create Position</Text>
+              <Text style={styles.title}>{showPositionsList ? 'All Positions' : 'Create Position'}</Text>
               <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.form}>
-              <Text style={styles.label}>Position Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Manager, Engineer, Developer"
-                placeholderTextColor="#999"
-                value={position}
-                onChangeText={setPosition}
-                autoCapitalize="words"
-              />
-            </View>
+            {showPositionsList ? (
+              // Show Positions List
+              <>
+                {loadingPositions ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#228B22" />
+                    <Text style={styles.loadingText}>Loading positions...</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={positions}
+                    keyExtractor={(item) => item.id.toString()}
+                    renderItem={renderPositionItem}
+                    style={styles.positionsList}
+                    ListEmptyComponent={
+                      <View style={styles.emptyContainer}>
+                        <Ionicons name="briefcase-outline" size={48} color="#ccc" />
+                        <Text style={styles.emptyText}>No positions found</Text>
+                      </View>
+                    }
+                  />
+                )}
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={styles.backButton} onPress={handleBackToCreate}>
+                    <Ionicons name="arrow-back" size={18} color="#228B22" />
+                    <Text style={styles.backButtonText}>Back to Create</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              // Show Create Position Form
+              <>
+                <View style={styles.form}>
+                  <Text style={styles.label}>Position Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Manager, Engineer, Developer"
+                    placeholderTextColor="#999"
+                    value={position}
+                    onChangeText={setPosition}
+                    autoCapitalize="words"
+                  />
+                </View>
 
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, !position.trim() && styles.saveButtonDisabled]}
-                onPress={handleSave}
-                disabled={!position.trim()}
-              >
-                <Text style={styles.saveButtonText}>Create Position</Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={styles.viewPositionsButton} onPress={handleViewAllPositions} disabled={loadingPositions}>
+                    {loadingPositions ? (
+                      <ActivityIndicator size="small" color="#228B22" />
+                    ) : (
+                      <>
+                        <Ionicons name="list" size={18} color="#228B22" />
+                        <Text style={styles.viewPositionsButtonText}>View All Positions</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveButton, !position.trim() && styles.saveButtonDisabled]}
+                    onPress={handleSave}
+                    disabled={!position.trim()}
+                  >
+                    <Text style={styles.saveButtonText}>Create Position</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -170,19 +277,37 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
-  cancelButton: {
+  viewPositionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     borderRadius: 8,
     marginBottom: 30,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: 'white',
+    borderColor: '#228B22',
+    gap: 6,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
+  viewPositionsButtonText: {
+    color: '#228B22',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#228B22',
+    gap: 6,
+  },
+  backButtonText: {
+    color: '#228B22',
+    fontSize: 14,
+    fontWeight: '600',
   },
   saveButton: {
     paddingVertical: 12,
@@ -198,6 +323,55 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  positionsList: {
+    maxHeight: 300,
+  },
+  positionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  positionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  positionInfo: {
+    flex: 1,
+  },
+  positionName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  deleteButton: {
+    padding: 8,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+    fontSize: 14,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: 12,
+    color: '#999',
+    fontSize: 14,
   },
 });
 

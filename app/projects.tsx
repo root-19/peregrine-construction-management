@@ -151,9 +151,15 @@ export default function ProjectsScreen() {
     }
   };
 
-  const handleNavigateToProject = (project: Project) => {
-    // Navigate to project detail (NOT folder-detail)
-    router.push(`/folder-detail?projectId=${project.id}&projectName=${encodeURIComponent(project.name)}`);
+  const handleNavigateToProject = async (project: Project) => {
+    // Navigate to document-system page to show documents and material requests for all accounts
+    router.push({
+      pathname: '/document-system',
+      params: {
+        projectId: project.id.toString(),
+        projectName: project.name,
+      },
+    } as any);
   };
 
   // Filter projects based on search query

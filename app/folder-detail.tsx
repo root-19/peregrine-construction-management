@@ -2,13 +2,13 @@ import AddItemModal from '@/components/AddItemModal';
 import AssignUserModal from '@/components/AssignUserModal';
 import { useUser } from '@/contexts/UserContext';
 import { useDatabase } from '@/hooks/use-database';
-import { deleteProjectFolder, getProjectFolders, getProjectFoldersForUser, getSubfolders, insertProjectFolder, insertSubfolder, updateProjectFolder } from '@/services/api';
-import { ProjectFolder, Subfolder } from '@/peregrineDB/types';
+import { deleteProjectFolder, getMaterialRequests, getMyMaterialRequests, getProjectFolders, getProjectFoldersForUser, getSubfolders, insertProjectFolder, insertSubfolder, updateMaterialRequestStatus, updateProjectFolder } from '@/services/api';
+import { MaterialRequest, ProjectFolder, Subfolder } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Alert, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ImageBackground, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function FolderDetailScreen() {
   const router = useRouter();
@@ -74,6 +74,10 @@ export default function FolderDetailScreen() {
   // State for subfolder assignment modal
   const [showAssignSubfolderModal, setShowAssignSubfolderModal] = useState(false);
   const [selectedSubfolder, setSelectedSubfolder] = useState<Subfolder | null>(null);
+
+  // Material Request states
+  const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
+  const [materialLoading, setMaterialLoading] = useState(false);
 
   // Check if user is Manager or COO
   const isManagerOrCOO =
@@ -371,6 +375,56 @@ export default function FolderDetailScreen() {
     );
   };
 
+  const loadMaterialRequests = async () => {
+    try {
+      setMaterialLoading(true);
+      if (!user) {
+        console.warn('⚠️ User not loaded yet, skipping material requests load');
+        setMaterialRequests([]);
+        return;
+      }
+      
+      console.log('📦 Loading material requests for user:', { userId: user.id, canManageFolders, isHR, isManagerOrCOO });
+      
+      if (canManageFolders) {
+        const requests = await getMaterialRequests();
+        console.log('📦 Loaded all material requests:', requests?.length || 0);
+        setMaterialRequests(requests || []);
+      } else {
+        const requests = await getMyMaterialRequests();
+        console.log('📦 Loaded my material requests:', requests?.length || 0, requests);
+        setMaterialRequests(requests || []);
+      }
+    } catch (error) {
+      console.error('❌ Error loading material requests:', error);
+      Alert.alert('Error', 'Failed to load material requests. Please try again.');
+      setMaterialRequests([]);
+    } finally {
+      setMaterialLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return '#FFA500';
+      case 'approved': return '#4CAF50';
+      case 'rejected': return '#f44336';
+      case 'processing': return '#2196F3';
+      case 'completed': return '#228B22';
+      default: return '#666';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'low': return '#4CAF50';
+      case 'medium': return '#FF9800';
+      case 'high': return '#f44336';
+      case 'urgent': return '#9C27B0';
+      default: return '#666';
+    }
+  };
+
   const handleButtonPress = async (buttonName: string) => {
     // Toggle expansion
     if (expandedButton === buttonName) {
@@ -383,6 +437,10 @@ export default function FolderDetailScreen() {
       setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
       // Reload all subfolders when button is expanded
       await loadAllSubfolders();
+      // Load material requests if Procurement is clicked
+      if (buttonName === 'Procurement') {
+        loadMaterialRequests();
+      }
     }
   };
 
@@ -655,7 +713,7 @@ export default function FolderDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'MATERIAL REQUEST' && styles.activeTab]}
-              onPress={() => setActiveTab('MATERIAL REQUEST')}
+              onPress={() => router.push('/material-request-form')}
             >
               <Text style={[styles.tabText, activeTab === 'MATERIAL REQUEST' && styles.activeTabText]}>
                 MATERIAL REQUEST
@@ -683,58 +741,207 @@ export default function FolderDetailScreen() {
                 {/* Expanded subfolders */}
                 {expandedButton === buttonName && (
                   <View style={styles.subfoldersContainer}>
-                    {/* Subfolders list - shows all folders with this folder as parent */}
-                    {subfolders[buttonName] && subfolders[buttonName].length > 0 ? (
-                      subfolders[buttonName].map((subfolder) => (
-                        <TouchableOpacity
-                          key={subfolder.id}
-                          style={styles.subfolderItem}
-                          onPress={() => handleSubfolderPress(subfolder)}
-                          disabled={!canManageFolders}
-                        >
-                          <Ionicons name="folder" size={20} color="#228B22" style={styles.folderIcon} />
-                          <Text style={styles.subfolderText}>{subfolder.name}</Text>
-                          {canManageFolders && (
-                            <Ionicons name="people-outline" size={18} color="#228B22" style={styles.assignIcon} />
-                          )}
-                        </TouchableOpacity>
-                      ))
+                    {buttonName === 'Procurement' ? (
+                      // Show Material Requests for Procurement (no subfolders for users)
+                      <>
+                        {materialLoading ? (
+                          <View style={styles.emptySubfolderContainer}>
+                            <Text style={styles.emptySubfolderText}>Loading material requests...</Text>
+                          </View>
+                        ) : (() => {
+                          // Filter requests based on user type
+                          const filteredRequests = materialRequests.filter(req => {
+                            // For regular users, only show their own requests
+                            if (!canManageFolders && user) {
+                              return req.requested_by_id === user.id;
+                            }
+                            // For HR/Manager/COO, show all requests
+                            return true;
+                          });
+                          
+                          if (filteredRequests.length === 0) {
+                            return (
+                              <View style={styles.emptySubfolderContainer}>
+                                <Text style={styles.emptySubfolderText}>
+                                  {!canManageFolders ? 'You have no material requests yet' : 'No material requests yet'}
+                                </Text>
+                              </View>
+                            );
+                          }
+                          
+                          return (
+                            <ScrollView style={{ maxHeight: 400 }}>
+                              {filteredRequests.map((req) => (
+                                <View key={req.id} style={styles.requestCard}>
+                                  <View style={styles.requestHeader}>
+                                    <View style={styles.requestInfo}>
+                                      <Text style={styles.requestTitle}>Request #{req.id}</Text>
+                                      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(req.status) }]}>
+                                        <Text style={styles.statusText}>{req.status.toUpperCase()}</Text>
+                                      </View>
+                                    </View>
+                                    <View style={styles.headerRight}>
+                                      <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(req.priority) }]}>
+                                        <Text style={styles.priorityText}>{req.priority.toUpperCase()}</Text>
+                                      </View>
+                                      <Text style={styles.requestDate}>
+                                        {new Date(req.created_at).toLocaleDateString()}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  
+                                  <View style={styles.requestDetails}>
+                                    <View style={styles.detailRow}>
+                                      <Text style={styles.detailLabel}>Requested by:</Text>
+                                      <Text style={styles.detailValue}>{req.requested_by_name} {req.requested_by_position ? `(${req.requested_by_position})` : ''}</Text>
+                                    </View>
+                                    {req.project_name && (
+                                      <View style={styles.detailRow}>
+                                        <Text style={styles.detailLabel}>Project:</Text>
+                                        <Text style={styles.detailValue}>{req.project_name}</Text>
+                                      </View>
+                                    )}
+                                    <View style={styles.detailRow}>
+                                      <Text style={styles.detailLabel}>Date Needed:</Text>
+                                      <Text style={styles.detailValue}>
+                                        {new Date(req.date_needed).toLocaleDateString()}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.detailRow}>
+                                      <Text style={styles.detailLabel}>Items:</Text>
+                                      <Text style={styles.detailValue}>{req.materials?.length || 0} item(s)</Text>
+                                    </View>
+                                  </View>
+                                  
+                                  <Text style={styles.purposeLabel}>Purpose:</Text>
+                                  <Text style={styles.purposeText} numberOfLines={2}>
+                                    {req.purpose}
+                                  </Text>
+
+                                  <View style={styles.materialsList}>
+                                    <Text style={styles.materialsTitle}>Materials:</Text>
+                                    {req.materials?.slice(0, 3).map((material, index) => (
+                                      <Text key={index} style={styles.materialItem}>
+                                        • {material.quantity} {material.unit} - {material.item_name}
+                                      </Text>
+                                    ))}
+                                    {req.materials && req.materials.length > 3 && (
+                                      <Text style={styles.moreItems}>+{req.materials.length - 3} more items...</Text>
+                                    )}
+                                  </View>
+
+                                  {/* HR/Manager/COO approve/decline buttons */}
+                                  {canManageFolders && req.status === 'pending' && (
+                                    <View style={{ flexDirection: 'row', marginTop: 10, gap: 8 }}>
+                                      <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: '#4CAF50', padding: 10, borderRadius: 5, alignItems: 'center' }}
+                                        onPress={async () => {
+                                          try {
+                                            await updateMaterialRequestStatus(req.id, 'approved', isHR ? 'hr' : 'manager_coo', 'Approved');
+                                            Alert.alert('Success', 'Request approved.');
+                                            loadMaterialRequests();
+                                          } catch (err) {
+                                            Alert.alert('Error', 'Could not approve the request.');
+                                          }
+                                        }}
+                                      >
+                                        <Text style={{ color: 'white', fontWeight: 'bold' }}>Approve</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: '#f44336', padding: 10, borderRadius: 5, alignItems: 'center' }}
+                                        onPress={() => {
+                                          Alert.prompt(
+                                            'Decline Request',
+                                            'Enter reason for declining this request:',
+                                            [
+                                              { text: 'Cancel', style: 'cancel' },
+                                              {
+                                                text: 'Decline',
+                                                style: 'destructive',
+                                                onPress: (rejectionReason?: string) => {
+                                                  (async () => {
+                                                    try {
+                                                      await updateMaterialRequestStatus(req.id, 'rejected', isHR ? 'hr' : 'manager_coo', rejectionReason || 'No reason provided');
+                                                      Alert.alert('Success', 'Request declined.');
+                                                      loadMaterialRequests();
+                                                    } catch (err) {
+                                                      Alert.alert('Error', 'Could not decline the request.');
+                                                    }
+                                                  })();
+                                                },
+                                              },
+                                            ],
+                                            'plain-text'
+                                          );
+                                        }}
+                                      >
+                                        <Text style={{ color: 'white', fontWeight: 'bold' }}>Decline</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+                                </View>
+                              ))}
+                            </ScrollView>
+                          );
+                        })()}
+                      </>
                     ) : (
-                      <View style={styles.emptySubfolderContainer}>
-                        <Text style={styles.emptySubfolderText}>No subfolders yet</Text>
-                      </View>
-                    )}
-                    
-                    {/* Input field to create new folder - shows automatically when button is expanded */}
-                    {canManageFolders && (
-                      <View style={styles.addSubfolderContainer}>
-                        <Text style={styles.inputLabel}>Create New Folder:</Text>
-                        <TextInput
-                          style={styles.subfolderInput}
-                          placeholder="Enter project/folder name"
-                          value={newSubfolderName[buttonName] || ''}
-                          onChangeText={(text) => setNewSubfolderName({ ...newSubfolderName, [buttonName]: text })}
-                          onSubmitEditing={() => handleAddSubfolder(buttonName)}
-                          returnKeyType="done"
-                          autoFocus
-                        />
-                        <View style={styles.addSubfolderActions}>
-                          <TouchableOpacity
-                            style={styles.addSubfolderButton}
-                            onPress={() => handleAddSubfolder(buttonName)}
-                          >
-                            <Text style={styles.addSubfolderButtonText}>Create</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.addSubfolderButton, styles.cancelButton]}
-                            onPress={() => {
-                              setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
-                            }}
-                          >
-                            <Text style={styles.addSubfolderButtonText}>Clear</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
+                      // Show Subfolders for other buttons
+                      <>
+                        {/* Subfolders list - shows all folders with this folder as parent */}
+                        {subfolders[buttonName] && subfolders[buttonName].length > 0 ? (
+                          subfolders[buttonName].map((subfolder) => (
+                            <TouchableOpacity
+                              key={subfolder.id}
+                              style={styles.subfolderItem}
+                              onPress={() => handleSubfolderPress(subfolder)}
+                              disabled={!canManageFolders}
+                            >
+                              <Ionicons name="folder" size={20} color="#228B22" style={styles.folderIcon} />
+                              <Text style={styles.subfolderText}>{subfolder.name}</Text>
+                              {canManageFolders && (
+                                <Ionicons name="people-outline" size={18} color="#228B22" style={styles.assignIcon} />
+                              )}
+                            </TouchableOpacity>
+                          ))
+                        ) : (
+                          <View style={styles.emptySubfolderContainer}>
+                            <Text style={styles.emptySubfolderText}>No subfolders yet</Text>
+                          </View>
+                        )}
+                        
+                        {/* Input field to create new folder - shows automatically when button is expanded */}
+                        {canManageFolders && (
+                          <View style={styles.addSubfolderContainer}>
+                            <Text style={styles.inputLabel}>Create New Folder:</Text>
+                            <TextInput
+                              style={styles.subfolderInput}
+                              placeholder="Enter project/folder name"
+                              value={newSubfolderName[buttonName] || ''}
+                              onChangeText={(text) => setNewSubfolderName({ ...newSubfolderName, [buttonName]: text })}
+                              onSubmitEditing={() => handleAddSubfolder(buttonName)}
+                              returnKeyType="done"
+                              autoFocus
+                            />
+                            <View style={styles.addSubfolderActions}>
+                              <TouchableOpacity
+                                style={styles.addSubfolderButton}
+                                onPress={() => handleAddSubfolder(buttonName)}
+                              >
+                                <Text style={styles.addSubfolderButtonText}>Create</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.addSubfolderButton, styles.cancelButton]}
+                                onPress={() => {
+                                  setNewSubfolderName({ ...newSubfolderName, [buttonName]: '' });
+                                }}
+                              >
+                                <Text style={styles.addSubfolderButtonText}>Clear</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      </>
                     )}
                   </View>
                 )}
@@ -1053,6 +1260,116 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  // Material Request Styles
+  requestCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  requestInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  requestTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  priorityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  priorityText: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  requestDate: {
+    fontSize: 11,
+    color: '#666',
+  },
+  requestDetails: {
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    width: 100,
+  },
+  detailValue: {
+    fontSize: 12,
+    color: '#333',
+    flex: 1,
+  },
+  purposeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 4,
+  },
+  purposeText: {
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  materialsList: {
+    backgroundColor: '#f9f9f9',
+    padding: 10,
+    borderRadius: 8,
+  },
+  materialsTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#228B22',
+    marginBottom: 6,
+  },
+  materialItem: {
+    fontSize: 11,
+    color: '#333',
+    marginBottom: 2,
+  },
+  moreItems: {
+    fontSize: 11,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 });
 

@@ -62,6 +62,9 @@ export default function MessagesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+
+
+    
     await loadIncidentReports();
     setRefreshing(false);
   };

@@ -160,5 +160,11 @@ export const API_ENDPOINTS = {
         INCIDENT_REPORTS_MY: '/incident-reports/my-reports',
         INCIDENT_REPORT_BY_ID: (id: string | number) => `/incident-reports/${id}`,
         INCIDENT_REPORT_UPDATE_STATUS: (id: string | number) => `/incident-reports/${id}/status`,
+
+        // Material Request endpoints
+        MATERIAL_REQUESTS: '/material-requests',
+        MATERIAL_REQUESTS_MY: '/material-requests/my-requests',
+        MATERIAL_REQUEST_BY_ID: (id: string | number) => `/material-requests/${id}`,
+        MATERIAL_REQUEST_UPDATE_STATUS: (id: string | number) => `/material-requests/${id}/status`,
       };
 

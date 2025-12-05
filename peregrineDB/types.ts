@@ -169,3 +169,35 @@ export interface PersonInvolved {
   position: string;
 }
 
+// Material Request Types
+export interface MaterialItem {
+  item_name: string;
+  quantity: number;
+  unit: string;
+  specifications?: string;
+}
+
+export interface MaterialRequest {
+  id: number;
+  requested_by_id: number;
+  requested_by_name: string;
+  requested_by_position: string;
+  department?: string;
+  date_of_request: string;
+  date_needed: string;
+  project_name?: string;
+  project_location?: string;
+  purpose: string;
+  materials: MaterialItem[];
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'pending' | 'approved' | 'rejected' | 'processing' | 'completed';
+  remarks?: string;
+  rejection_reason?: string;
+  approved_by_id?: number;
+  approved_by_type?: 'hr' | 'manager_coo';
+  approved_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+

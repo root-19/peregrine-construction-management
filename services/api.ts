@@ -1,4 +1,4 @@
-import { DocumentFolder, HRAccount, IncidentReport, ManagerCOOAccount, Position, Procurement, Project, ProjectFolder, Subfolder, User } from '@/peregrineDB/types';
+import { DocumentFolder, HRAccount, IncidentReport, ManagerCOOAccount, MaterialItem, MaterialRequest, Position, Procurement, Project, ProjectFolder, Subfolder, User } from '@/peregrineDB/types';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { API_BASE_URL, API_ENDPOINTS } from '@/constants/api';
@@ -811,6 +811,71 @@ export const getIncidentReportById = async (id: number): Promise<IncidentReport>
 // Delete incident report
 export const deleteIncidentReport = async (id: number): Promise<void> => {
   return apiRequest<void>(API_ENDPOINTS.INCIDENT_REPORT_BY_ID(id), {
+    method: 'DELETE',
+  });
+};
+
+// ==================== MATERIAL REQUEST FUNCTIONS ====================
+
+// Get all material requests (for HR, Manager, COO)
+export const getMaterialRequests = async (status?: string, priority?: string): Promise<MaterialRequest[]> => {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (priority) params.append('priority', priority);
+  return apiRequest<MaterialRequest[]>(`${API_ENDPOINTS.MATERIAL_REQUESTS}?${params.toString()}`);
+};
+
+// Get my material requests (for regular users)
+export const getMyMaterialRequests = async (): Promise<MaterialRequest[]> => {
+  return apiRequest<MaterialRequest[]>(API_ENDPOINTS.MATERIAL_REQUESTS_MY);
+};
+
+// Submit a new material request (for regular users)
+export const submitMaterialRequest = async (data: {
+  requested_by_name: string;
+  requested_by_position: string;
+  department?: string;
+  date_of_request: string;
+  date_needed: string;
+  project_name?: string;
+  project_location?: string;
+  purpose: string;
+  materials: MaterialItem[];
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+}): Promise<MaterialRequest> => {
+  return apiRequest<MaterialRequest>(API_ENDPOINTS.MATERIAL_REQUESTS, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+// Update material request status (for HR, Manager, COO)
+export const updateMaterialRequestStatus = async (
+  id: number,
+  status: 'pending' | 'approved' | 'rejected' | 'processing' | 'completed',
+  approverType: 'hr' | 'manager_coo',
+  remarks?: string,
+  rejectionReason?: string
+): Promise<MaterialRequest> => {
+  return apiRequest<MaterialRequest>(API_ENDPOINTS.MATERIAL_REQUEST_UPDATE_STATUS(id), {
+    method: 'PUT',
+    body: JSON.stringify({ 
+      status, 
+      approver_type: approverType, 
+      remarks,
+      rejection_reason: rejectionReason 
+    }),
+  });
+};
+
+// Get material request by ID
+export const getMaterialRequestById = async (id: number): Promise<MaterialRequest> => {
+  return apiRequest<MaterialRequest>(API_ENDPOINTS.MATERIAL_REQUEST_BY_ID(id));
+};
+
+// Delete material request
+export const deleteMaterialRequest = async (id: number): Promise<void> => {
+  return apiRequest<void>(API_ENDPOINTS.MATERIAL_REQUEST_BY_ID(id), {
     method: 'DELETE',
   });
 };

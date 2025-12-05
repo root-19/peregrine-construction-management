@@ -53,13 +53,16 @@ const getBaseURL = () => {
   //   - Make sure your phone and computer are on the SAME WiFi network
   if (Platform.OS === 'android') {
     // For Android physical device - use your computer's actual IP
-    return 'http://192.168.1.17:8000/api';
+    // return 'http://192.168.1.17:8000/api';
+    return 'https://backend-peregrine.online/api';
     
     // For Android emulator, use this instead:
     // return 'http://10.0.2.2:8000/api';
     
     // For production, use this instead:
     // return 'https://backend-peregrine.online/api';
+    // For Android physical device - use your computer's actual IP
+    
   }
 
   // For iOS simulator, can use localhost or your IP

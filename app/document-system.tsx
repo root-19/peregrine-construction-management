@@ -107,7 +107,13 @@ export default function DocumentSystemScreen() {
   };
 
   const handleCreateMaterialRequest = () => {
-    router.push('/material-request-form');
+    router.push({
+      pathname: '/material-request-form',
+      params: {
+        projectName: projectNameParam || '',
+        projectId: projectIdParam || '',
+      },
+    } as any);
   };
 
   const getStatusColor = (status: string) => {
@@ -393,21 +399,30 @@ export default function DocumentSystemScreen() {
         <View style={styles.tabsContainer}>
           <View style={styles.tabsBox}>
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'DOCUMENTS' && styles.activeTab, { borderRightWidth: 1, borderRightColor: '#000' }]}
+              style={[styles.tab, activeTab === 'DOCUMENTS' && styles.activeTab, !canManageFolders && { borderRightWidth: 1, borderRightColor: '#000' }]}
               onPress={() => setActiveTab('DOCUMENTS')}
             >
               <Text style={[styles.tabText, activeTab === 'DOCUMENTS' && styles.activeTabText]}>
                 DOCUMENTS
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-  style={[styles.tab, activeTab === 'MATERIAL REQUEST' && styles.activeTab]}
-  onPress={() => router.push('/material-request-form')}
->
-  <Text style={[styles.tabText, activeTab === 'MATERIAL REQUEST' && styles.activeTabText]}>
-    MATERIAL REQUEST
-  </Text>
-</TouchableOpacity>
+            {/* Only show MATERIAL REQUEST tab for regular users */}
+            {!canManageFolders && (
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'MATERIAL REQUEST' && styles.activeTab]}
+                onPress={() => router.push({
+                  pathname: '/material-request-form',
+                  params: {
+                    projectName: projectNameParam || '',
+                    projectId: projectIdParam || '',
+                  },
+                } as any)}
+              >
+                <Text style={[styles.tabText, activeTab === 'MATERIAL REQUEST' && styles.activeTabText]}>
+                  MATERIAL REQUEST
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -446,14 +461,37 @@ export default function DocumentSystemScreen() {
                                   <Text style={styles.emptySubfolderText}>Loading material requests...</Text>
                                 </View>
                               ) : (() => {
-                                // Filter requests based on user type
+                                // Filter requests based on user type and project
                                 const filteredRequests = materialRequests.filter(req => {
+                                  // First filter by project - only show requests for current project
+                                  const currentProjectName = projectNameParam?.trim();
+                                  const requestProjectName = req.project_name?.trim();
+                                  
+                                  if (currentProjectName) {
+                                    // If current project has a name, only show requests that match (case-insensitive)
+                                    if (requestProjectName) {
+                                      if (requestProjectName.toLowerCase() !== currentProjectName.toLowerCase()) {
+                                        return false; // Not for this project
+                                      }
+                                    } else {
+                                      // Request doesn't have project name but current project does - exclude
+                                      return false;
+                                    }
+                                  }
+                                  
                                   // For regular users, only show their own requests
                                   if (!canManageFolders && user) {
                                     return req.requested_by_id === user.id;
                                   }
-                                  // For HR/Manager/COO, show all requests
+                                  // For HR/Manager/COO, show all requests for this project
                                   return true;
+                                });
+                                
+                                console.log('📦 Filtered material requests for Procurement:', {
+                                  currentProject: projectNameParam,
+                                  totalRequests: materialRequests.length,
+                                  filteredCount: filteredRequests.length,
+                                  filteredRequests: filteredRequests.map(r => ({ id: r.id, project: r.project_name, requested_by: r.requested_by_name }))
                                 });
                                 
                                 if (filteredRequests.length === 0) {
@@ -666,26 +704,53 @@ export default function DocumentSystemScreen() {
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Loading material requests...</Text>
                 </View>
-              ) : materialRequests.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="cube-outline" size={64} color="#999" />
-                  <Text style={styles.emptyText}>No material requests</Text>
-                  <Text style={styles.emptySubtext}>
-                    {canManageFolders 
-                      ? 'No material requests have been submitted yet' 
-                      : 'Tap the button above to create a new request'
+              ) : (() => {
+                // Filter requests by project and user type
+                const filteredRequests = materialRequests.filter(req => {
+                  // First filter by project - only show requests for current project
+                  const currentProjectName = projectNameParam?.trim();
+                  const requestProjectName = req.project_name?.trim();
+                  
+                  if (currentProjectName) {
+                    // If current project has a name, only show requests that match (case-insensitive)
+                    if (requestProjectName) {
+                      if (requestProjectName.toLowerCase() !== currentProjectName.toLowerCase()) {
+                        return false; // Not for this project
+                      }
+                    } else {
+                      // Request doesn't have project name but current project does - exclude
+                      return false;
                     }
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView 
-                  style={{ flex: 1 }}
-                  showsVerticalScrollIndicator={false}
-                  refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefreshMaterials} colors={['#228B22']} />
                   }
-                >
-                  {materialRequests.map((item) => (
+                  
+                  // For regular users, only show their own requests
+                  if (!canManageFolders && user) {
+                    return req.requested_by_id === user.id;
+                  }
+                  // For HR/Manager/COO, show all requests for this project
+                  return true;
+                });
+                
+                return filteredRequests.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="cube-outline" size={64} color="#999" />
+                    <Text style={styles.emptyText}>No material requests</Text>
+                    <Text style={styles.emptySubtext}>
+                      {canManageFolders 
+                        ? 'No material requests have been submitted yet for this project' 
+                        : 'Tap the button above to create a new request'
+                      }
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView 
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                      <RefreshControl refreshing={refreshing} onRefresh={onRefreshMaterials} colors={['#228B22']} />
+                    }
+                  >
+                    {filteredRequests.map((item) => (
                     <View key={item.id} style={styles.requestCard}>
                       <View style={styles.requestHeader}>
                         <View style={styles.requestInfo}>
@@ -794,9 +859,10 @@ export default function DocumentSystemScreen() {
                       )}
                     </View>
                   ))}
-                  <View style={{ height: 40 }} />
-                </ScrollView>
-              )}
+                    <View style={{ height: 40 }} />
+                  </ScrollView>
+                );
+              })()}
             </View>
           )}
         </View>

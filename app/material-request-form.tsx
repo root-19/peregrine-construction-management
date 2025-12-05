@@ -2,9 +2,9 @@ import { useUser } from '@/contexts/UserContext';
 import { submitMaterialRequest } from '@/services/api';
 import { MaterialItem } from '@/peregrineDB/types';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   ImageBackground,
@@ -20,19 +20,33 @@ import {
 
 export default function MaterialRequestFormScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    projectName?: string | string[];
+    projectId?: string | string[];
+  }>();
   const { user } = useUser();
+
+  // Get project name from params
+  const projectNameParam = Array.isArray(params.projectName) ? params.projectName[0] : params.projectName;
 
   // Form States
   const [loading, setLoading] = useState(false);
   const [department, setDepartment] = useState('');
   const [dateNeeded, setDateNeeded] = useState('');
-  const [projectName, setProjectName] = useState('');
+  const [projectName, setProjectName] = useState(projectNameParam || '');
   const [projectLocation, setProjectLocation] = useState('');
   const [purpose, setPurpose] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [materials, setMaterials] = useState<MaterialItem[]>([
     { item_name: '', quantity: 1, unit: 'pcs', specifications: '' }
   ]);
+
+  // Update project name when params change
+  useEffect(() => {
+    if (projectNameParam) {
+      setProjectName(projectNameParam);
+    }
+  }, [projectNameParam]);
 
   const units = ['pcs', 'kg', 'g', 'L', 'mL', 'box', 'pack', 'roll', 'set', 'bag', 'meter', 'feet', 'unit'];
 

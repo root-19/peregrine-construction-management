@@ -711,14 +711,23 @@ export default function FolderDetailScreen() {
                 DOCUMENTS
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'MATERIAL REQUEST' && styles.activeTab]}
-              onPress={() => router.push('/material-request-form')}
-            >
-              <Text style={[styles.tabText, activeTab === 'MATERIAL REQUEST' && styles.activeTabText]}>
-                MATERIAL REQUEST
-              </Text>
-            </TouchableOpacity>
+            {/* Only show MATERIAL REQUEST tab for regular users */}
+            {!canManageFolders && (
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'MATERIAL REQUEST' && styles.activeTab]}
+                onPress={() => router.push({
+                  pathname: '/material-request-form',
+                  params: {
+                    projectName: projectNameParam || projectName || '',
+                    projectId: projectIdParam || projectId || '',
+                  },
+                } as any)}
+              >
+                <Text style={[styles.tabText, activeTab === 'MATERIAL REQUEST' && styles.activeTabText]}>
+                  MATERIAL REQUEST
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Buttons */}
@@ -749,14 +758,37 @@ export default function FolderDetailScreen() {
                             <Text style={styles.emptySubfolderText}>Loading material requests...</Text>
                           </View>
                         ) : (() => {
-                          // Filter requests based on user type
+                          // Filter requests based on user type and project
                           const filteredRequests = materialRequests.filter(req => {
+                            // First filter by project - only show requests for current project
+                            const currentProjectName = (projectNameParam || projectName)?.trim();
+                            const requestProjectName = req.project_name?.trim();
+                            
+                            if (currentProjectName) {
+                              // If current project has a name, only show requests that match (case-insensitive)
+                              if (requestProjectName) {
+                                if (requestProjectName.toLowerCase() !== currentProjectName.toLowerCase()) {
+                                  return false; // Not for this project
+                                }
+                              } else {
+                                // Request doesn't have project name but current project does - exclude
+                                return false;
+                              }
+                            }
+                            
                             // For regular users, only show their own requests
                             if (!canManageFolders && user) {
                               return req.requested_by_id === user.id;
                             }
-                            // For HR/Manager/COO, show all requests
+                            // For HR/Manager/COO, show all requests for this project
                             return true;
+                          });
+                          
+                          console.log('📦 Filtered material requests for Procurement (folder-detail):', {
+                            currentProject: projectNameParam || projectName,
+                            totalRequests: materialRequests.length,
+                            filteredCount: filteredRequests.length,
+                            filteredRequests: filteredRequests.map(r => ({ id: r.id, project: r.project_name, requested_by: r.requested_by_name }))
                           });
                           
                           if (filteredRequests.length === 0) {
